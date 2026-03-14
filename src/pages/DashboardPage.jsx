@@ -100,8 +100,8 @@ export default function DashboardPage() {
               onClick={() => setFilter(f.value)}
               className={`btn-brutal whitespace-nowrap py-2 px-4 text-xs ${
                 filter === f.value
-                  ? 'bg-court-dark text-court-gold'
-                  : 'bg-white'
+                  ? 'bg-court-ink text-court-gold border-court-ink'
+                  : 'bg-court-card'
               }`}
             >
               {f.label}

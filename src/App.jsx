@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom';
 import { SignIn, SignUp } from '@clerk/react';
+import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/layout/Layout';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
@@ -7,6 +8,8 @@ import NewCasePage from './pages/NewCasePage';
 import CourtroomPage from './pages/CourtroomPage';
 import VerdictPage from './pages/VerdictPage';
 import JoinCasePage from './pages/JoinCasePage';
+import LeaderboardPage from './pages/LeaderboardPage';
+import ProfilePage from './pages/ProfilePage';
 
 function SignInPage() {
   const [searchParams] = useSearchParams();
@@ -30,20 +33,24 @@ function SignUpPage() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/sign-in/*" element={<SignInPage />} />
-          <Route path="/sign-up/*" element={<SignUpPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/new-case" element={<NewCasePage />} />
-          <Route path="/case/:caseId" element={<CourtroomPage />} />
-          <Route path="/case/:caseId/verdict" element={<VerdictPage />} />
-          <Route path="/join/:inviteCode" element={<JoinCasePage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/sign-in/*" element={<SignInPage />} />
+            <Route path="/sign-up/*" element={<SignUpPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/new-case" element={<NewCasePage />} />
+            <Route path="/case/:caseId" element={<CourtroomPage />} />
+            <Route path="/case/:caseId/verdict" element={<VerdictPage />} />
+            <Route path="/join/:inviteCode" element={<JoinCasePage />} />
+            <Route path="/leaderboard" element={<LeaderboardPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }
 

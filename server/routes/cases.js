@@ -1,9 +1,38 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { cases, users, arguments_ } from '../db/schema.js';
-import { eq, or, desc, sql } from 'drizzle-orm';
+import { cases, users, arguments_, messages } from '../db/schema.js';
+import { eq, or, desc, sql, and, isNull } from 'drizzle-orm';
 import { requireAuth, syncUser } from '../middleware/auth.js';
 import { getVerdict } from '../services/judge.js';
+
+async function recalcWinLoss(userId) {
+  const [winCount] = await db
+    .select({ count: sql`count(*)::int` })
+    .from(cases)
+    .where(and(
+      eq(cases.status, 'verdict_delivered'),
+      or(
+        and(eq(cases.plaintiffId, userId), eq(cases.verdictWinner, 'plaintiff_wins')),
+        and(eq(cases.defendantId, userId), eq(cases.verdictWinner, 'defendant_wins'))
+      )
+    ));
+
+  const [lossCount] = await db
+    .select({ count: sql`count(*)::int` })
+    .from(cases)
+    .where(and(
+      eq(cases.status, 'verdict_delivered'),
+      or(
+        and(eq(cases.plaintiffId, userId), eq(cases.verdictWinner, 'defendant_wins')),
+        and(eq(cases.defendantId, userId), eq(cases.verdictWinner, 'plaintiff_wins'))
+      )
+    ));
+
+  await db
+    .update(users)
+    .set({ wins: winCount?.count || 0, losses: lossCount?.count || 0 })
+    .where(eq(users.id, userId));
+}
 
 const router = Router();
 
@@ -142,7 +171,7 @@ router.post('/join/:inviteCode', requireAuth(), syncUser, async (req, res, next)
       .update(cases)
       .set({
         defendantId: req.dbUser.id,
-        status: 'opening_statements',
+        status: 'in_session',
       })
       .where(eq(cases.id, caseData.id))
       .returning();
@@ -201,14 +230,9 @@ router.post('/:id/verdict', requireAuth(), syncUser, async (req, res, next) => {
       .where(eq(cases.id, caseData.id))
       .returning();
 
-    // Update win/loss records
-    const winnerId = verdict.verdict === 'plaintiff_wins' ? caseData.plaintiffId : caseData.defendantId;
-    const loserId = verdict.verdict === 'plaintiff_wins' ? caseData.defendantId : caseData.plaintiffId;
-
-    if (winnerId && verdict.verdict !== 'compromise') {
-      await db.update(users).set({ wins: sql`${users.wins} + 1` }).where(eq(users.id, winnerId));
-      if (loserId) await db.update(users).set({ losses: sql`${users.losses} + 1` }).where(eq(users.id, loserId));
-    }
+    // Recalculate win/loss from actual case data (prevents double-counting)
+    await recalcWinLoss(caseData.plaintiffId);
+    if (caseData.defendantId) await recalcWinLoss(caseData.defendantId);
 
     res.json({ ...updated, verdict });
   } catch (err) {
@@ -239,6 +263,71 @@ router.post('/:id/reset', requireAuth(), syncUser, async (req, res, next) => {
       .returning();
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Appeal a verdict
+router.post('/:id/appeal', requireAuth(), syncUser, async (req, res, next) => {
+  try {
+    const [caseData] = await db.select().from(cases).where(eq(cases.id, req.params.id)).limit(1);
+    if (!caseData) return res.status(404).json({ error: 'Case not found' });
+    if (caseData.status !== 'verdict_delivered') return res.status(400).json({ error: 'Case has no verdict to appeal' });
+
+    // Only the loser can appeal
+    const userId = req.dbUser.id;
+    const isLoser =
+      (caseData.verdictWinner === 'plaintiff_wins' && caseData.defendantId === userId) ||
+      (caseData.verdictWinner === 'defendant_wins' && caseData.plaintiffId === userId);
+
+    if (!isLoser && caseData.verdictWinner !== 'compromise') {
+      return res.status(403).json({ error: 'Only the losing party can appeal' });
+    }
+
+    // Check if already appealed
+    const [existingAppeal] = await db
+      .select()
+      .from(cases)
+      .where(eq(cases.appealedFromId, caseData.id))
+      .limit(1);
+
+    if (existingAppeal) {
+      return res.status(400).json({ error: 'This case has already been appealed', appealCaseId: existingAppeal.id });
+    }
+
+    const [appealCase] = await db
+      .insert(cases)
+      .values({
+        plaintiffId: caseData.plaintiffId,
+        defendantId: caseData.defendantId,
+        inviteCode: generateInviteCode(),
+        title: `[APPEAL] ${caseData.title}`,
+        description: caseData.description,
+        requestedCompensation: caseData.requestedCompensation,
+        judgePersona: caseData.judgePersona,
+        status: 'in_session',
+        appealedFromId: caseData.id,
+        isAppeal: true,
+      })
+      .returning();
+
+    res.status(201).json(appealCase);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Check if a case has been appealed
+router.get('/:id/appeal', requireAuth(), syncUser, async (req, res, next) => {
+  try {
+    const [appealCase] = await db
+      .select()
+      .from(cases)
+      .where(eq(cases.appealedFromId, req.params.id))
+      .limit(1);
+
+    res.json({ appeal: appealCase || null });
   } catch (err) {
     next(err);
   }

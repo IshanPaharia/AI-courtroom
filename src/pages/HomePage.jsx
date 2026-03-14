@@ -45,12 +45,12 @@ export default function HomePage() {
         transition={{ duration: 0.5 }}
         className="w-full py-8 text-center md:py-16"
       >
-        <div className="card-brutal mx-auto max-w-2xl bg-court-gold">
+        <div className="card-brutal mx-auto max-w-2xl bg-court-gold text-court-ink border-court-ink">
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
-            className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-court-dark bg-court-dark shadow-brutal md:h-24 md:w-24"
+            className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-court-ink bg-court-ink shadow-brutal md:h-24 md:w-24"
           >
             <Gavel className="h-10 w-10 text-court-gold md:h-12 md:w-12" />
           </motion.div>
@@ -58,7 +58,7 @@ export default function HomePage() {
           <h1 className="mb-3 text-3xl font-black tracking-tight md:text-5xl">
             AI Courtroom
           </h1>
-          <p className="mb-6 text-base font-medium text-court-dark/80 md:text-lg">
+          <p className="mb-6 text-base font-medium text-court-ink/80 md:text-lg">
             Settle friendly disputes with an AI Judge. File a case, argue your side,
             and get a verdict — compensation included.
           </p>
@@ -66,14 +66,14 @@ export default function HomePage() {
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Link
               to="/new-case"
-              className="btn-brutal bg-court-dark text-court-gold text-base w-full sm:w-auto"
+              className="btn-brutal bg-court-ink text-court-gold text-base w-full sm:w-auto border-court-ink"
             >
               <Gavel className="h-5 w-5" />
               File a Case
             </Link>
             <Link
               to="/dashboard"
-              className="btn-brutal bg-white text-court-dark text-base w-full sm:w-auto"
+              className="btn-brutal bg-court-card text-court-dark text-base w-full sm:w-auto"
             >
               View Cases
             </Link>
@@ -133,7 +133,7 @@ export default function HomePage() {
 
       {/* CTA */}
       <section className="w-full py-8 md:py-12">
-        <div className="card-brutal bg-court-dark text-center">
+        <div className="card-brutal bg-court-ink text-center border-court-ink">
           <h2 className="mb-3 text-2xl font-black text-court-gold md:text-3xl">
             Ready to Seek Justice?
           </h2>

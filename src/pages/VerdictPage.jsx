@@ -18,7 +18,7 @@ import { api } from '../services/api';
 function GavelAnimation() {
   return (
     <motion.div
-      className="flex h-24 w-24 items-center justify-center rounded-2xl border-2 border-court-dark bg-court-dark shadow-brutal-lg md:h-32 md:w-32"
+      className="flex h-24 w-24 items-center justify-center rounded-2xl border-2 border-court-ink bg-court-ink shadow-brutal-lg md:h-32 md:w-32"
       initial={{ rotate: -30, scale: 0 }}
       animate={{ rotate: 0, scale: 1 }}
       transition={{
@@ -64,14 +64,33 @@ export default function VerdictPage() {
   const navigate = useNavigate();
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [appealCase, setAppealCase] = useState(null);
+  const [appealing, setAppealing] = useState(false);
 
   useEffect(() => {
-    api
-      .getCase(caseId)
-      .then(setCaseData)
+    Promise.all([
+      api.getCase(caseId),
+      api.getAppeal(caseId).catch(() => ({ appeal: null })),
+    ])
+      .then(([c, a]) => {
+        setCaseData(c);
+        setAppealCase(a.appeal);
+      })
       .catch(() => setCaseData(null))
       .finally(() => setLoading(false));
   }, [caseId]);
+
+  const handleAppeal = async () => {
+    setAppealing(true);
+    try {
+      const appeal = await api.appealCase(caseId);
+      navigate(`/case/${appeal.id}`);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setAppealing(false);
+    }
+  };
 
   const persona = caseData
     ? JUDGE_PERSONAS.find((p) => p.id === caseData.judgePersona)
@@ -112,7 +131,7 @@ export default function VerdictPage() {
     <div className="mx-auto max-w-2xl">
       <button
         onClick={() => navigate('/dashboard')}
-        className="btn-brutal mb-6 bg-white py-2 px-4 text-sm"
+        className="btn-brutal mb-6 bg-court-card py-2 px-4 text-sm"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Cases
@@ -148,7 +167,7 @@ export default function VerdictPage() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.9 }}
-        className="card-brutal mb-4 bg-court-gold text-center"
+        className="card-brutal mb-4 bg-court-gold text-center text-court-ink border-court-ink"
       >
         <div className="mb-2 flex items-center justify-center gap-2">
           <Trophy className="h-6 w-6" />
@@ -194,7 +213,7 @@ export default function VerdictPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1.15 }}
-          className="card-brutal mb-4 bg-court-dark text-white"
+          className="card-brutal mb-4 bg-court-ink text-white border-court-ink"
         >
           <Quote className="mb-2 h-6 w-6 text-court-gold" />
           <p className="text-base italic leading-relaxed">
@@ -219,6 +238,51 @@ export default function VerdictPage() {
         </motion.div>
       )}
 
+      {/* Appeal status */}
+      {appealCase && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.3 }}
+          className="card-brutal mb-4 border-court-red bg-court-red/10"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-bold text-sm">This case has been appealed</p>
+              <p className="text-xs text-court-dark/60">
+                {appealCase.status === 'verdict_delivered' ? 'Appeal verdict delivered' : 'Appeal in progress'}
+              </p>
+            </div>
+            <Link
+              to={appealCase.status === 'verdict_delivered' ? `/case/${appealCase.id}/verdict` : `/case/${appealCase.id}`}
+              className="btn-brutal bg-court-card text-sm py-1.5 px-3"
+            >
+              View Appeal <ArrowLeft className="h-3 w-3 rotate-180" />
+            </Link>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Original case link for appeals */}
+      {caseData.appealedFromId && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.3 }}
+          className="card-brutal mb-4 border-court-blue bg-court-blue/10"
+        >
+          <div className="flex items-center justify-between">
+            <p className="font-bold text-sm">This is an appeal case</p>
+            <Link
+              to={`/case/${caseData.appealedFromId}/verdict`}
+              className="btn-brutal bg-court-card text-sm py-1.5 px-3"
+            >
+              View Original
+            </Link>
+          </div>
+        </motion.div>
+      )}
+
       {/* Actions */}
       <motion.div
         initial={{ opacity: 0 }}
@@ -230,13 +294,19 @@ export default function VerdictPage() {
           <Share2 className="h-4 w-4" />
           Share Verdict
         </button>
-        <button className="btn-brutal flex-1 bg-white text-sm">
-          <RotateCcw className="h-4 w-4" />
-          File Appeal
-        </button>
+        {!appealCase && !caseData.isAppeal && (
+          <button
+            onClick={handleAppeal}
+            disabled={appealing}
+            className="btn-brutal flex-1 bg-court-card text-sm"
+          >
+            {appealing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            File Appeal
+          </button>
+        )}
         <Link
           to="/dashboard"
-          className="btn-brutal flex-1 bg-court-dark text-court-gold text-sm text-center"
+          className="btn-brutal flex-1 bg-court-ink text-court-gold text-sm text-center border-court-ink"
         >
           Back to Cases
         </Link>

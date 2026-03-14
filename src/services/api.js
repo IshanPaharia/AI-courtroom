@@ -22,6 +22,10 @@ async function request(path, options = {}) {
 
 export const api = {
   getMe: () => request('/users/me'),
+  updateMe: (data) => request('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  getMyStats: () => request('/users/me/stats'),
+  recalcStats: () => request('/users/me/recalc', { method: 'POST' }),
+  getLeaderboard: () => request('/users/leaderboard/rankings'),
 
   getCases: () => request('/cases'),
   getCase: (id) => request(`/cases/${id}`),
@@ -30,7 +34,12 @@ export const api = {
   requestVerdict: (caseId) => request(`/cases/${caseId}/verdict`, { method: 'POST' }),
   resetCase: (caseId) => request(`/cases/${caseId}/reset`, { method: 'POST' }),
 
+  appealCase: (caseId) => request(`/cases/${caseId}/appeal`, { method: 'POST' }),
+  getAppeal: (caseId) => request(`/cases/${caseId}/appeal`),
+
   submitArgument: (caseId, data) =>
     request(`/arguments/${caseId}`, { method: 'POST', body: JSON.stringify(data) }),
   getArguments: (caseId) => request(`/arguments/${caseId}`),
+
+  getAuthToken: async () => window.Clerk?.session?.getToken(),
 };

@@ -1,20 +1,41 @@
 @import "tailwindcss";
 
+/* Base custom properties (overridden by .dark) */
+:root {
+  --court-bg: #FFFEF5;
+  --court-card: #FFFFFF;
+  --court-dark: #1a1a1a;
+  --court-border: #1a1a1a;
+  --court-gold-light: #FEF9C3;
+  --court-shadow: #1a1a1a;
+}
+
+html.dark {
+  --court-bg: #0f0f0f;
+  --court-card: #1e1e1e;
+  --court-dark: #e5e5e5;
+  --court-border: #404040;
+  --court-gold-light: #3d3520;
+  --court-shadow: #404040;
+  color-scheme: dark;
+}
+
 @theme {
   --color-court-gold: #FACC15;
-  --color-court-gold-light: #FEF9C3;
+  --color-court-gold-light: var(--court-gold-light);
   --color-court-gold-dark: #EAB308;
-  --color-court-dark: #1a1a1a;
-  --color-court-bg: #FFFEF5;
-  --color-court-card: #FFFFFF;
-  --color-court-border: #1a1a1a;
+  --color-court-dark: var(--court-dark);
+  --color-court-bg: var(--court-bg);
+  --color-court-card: var(--court-card);
+  --color-court-border: var(--court-border);
+  --color-court-ink: #1a1a1a;
   --color-court-red: #EF4444;
   --color-court-green: #22C55E;
   --color-court-blue: #3B82F6;
 
-  --shadow-brutal: 4px 4px 0px #1a1a1a;
-  --shadow-brutal-sm: 2px 2px 0px #1a1a1a;
-  --shadow-brutal-lg: 6px 6px 0px #1a1a1a;
+  --shadow-brutal: 4px 4px 0px var(--court-shadow);
+  --shadow-brutal-sm: 2px 2px 0px var(--court-shadow);
+  --shadow-brutal-lg: 6px 6px 0px var(--court-shadow);
   --shadow-brutal-gold: 4px 4px 0px #EAB308;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -22,34 +43,39 @@
 
 @layer base {
   body {
-    background-color: var(--color-court-bg);
-    color: var(--color-court-dark);
+    background-color: var(--court-bg);
+    color: var(--court-dark);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   * {
-    border-color: var(--color-court-border);
+    border-color: var(--court-border);
   }
 }
 
 @layer components {
   .btn-brutal {
-    @apply relative inline-flex items-center justify-center gap-2 rounded-xl border-2 border-court-dark px-5 py-2.5 font-bold cursor-pointer;
-    box-shadow: 2px 2px 0px #1a1a1a;
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl border-2 px-5 py-2.5 font-bold cursor-pointer;
+    border-color: var(--court-border);
+    box-shadow: 2px 2px 0px var(--court-shadow);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
   }
   .btn-brutal:hover {
-    box-shadow: 4px 4px 0px #1a1a1a;
+    box-shadow: 4px 4px 0px var(--court-shadow);
   }
   .btn-brutal:active {
-    box-shadow: 1px 1px 0px #1a1a1a;
+    box-shadow: 1px 1px 0px var(--court-shadow);
   }
 
   .card-brutal {
-    @apply rounded-xl border-2 border-court-dark bg-court-card p-5 shadow-brutal;
+    @apply rounded-xl border-2 p-5;
+    border-color: var(--court-border);
+    background-color: var(--court-card);
+    box-shadow: 4px 4px 0px var(--court-shadow);
   }
 
   .card-hover {
@@ -57,18 +83,31 @@
   }
   .card-hover:hover {
     transform: translateY(-3px);
-    box-shadow: 6px 6px 0px #1a1a1a;
+    box-shadow: 6px 6px 0px var(--court-shadow);
   }
 
   .badge-brutal {
-    @apply inline-flex items-center rounded-lg border-2 border-court-dark px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide;
+    @apply inline-flex items-center rounded-lg border-2 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide;
+    border-color: var(--court-border);
   }
 
   .input-brutal {
-    @apply w-full rounded-xl border-2 border-court-dark bg-white px-4 py-3 font-medium shadow-brutal-sm transition-shadow focus:shadow-brutal focus:outline-none;
+    @apply w-full rounded-xl border-2 px-4 py-3 font-medium transition-shadow focus:outline-none;
+    border-color: var(--court-border);
+    background-color: var(--court-card);
+    box-shadow: 2px 2px 0px var(--court-shadow);
+  }
+  .input-brutal:focus {
+    box-shadow: 4px 4px 0px var(--court-shadow);
   }
 
   .textarea-brutal {
-    @apply w-full rounded-xl border-2 border-court-dark bg-white px-4 py-3 font-medium shadow-brutal-sm transition-shadow focus:shadow-brutal focus:outline-none resize-none;
+    @apply w-full rounded-xl border-2 px-4 py-3 font-medium transition-shadow focus:outline-none resize-none;
+    border-color: var(--court-border);
+    background-color: var(--court-card);
+    box-shadow: 2px 2px 0px var(--court-shadow);
+  }
+  .textarea-brutal:focus {
+    box-shadow: 4px 4px 0px var(--court-shadow);
   }
 }

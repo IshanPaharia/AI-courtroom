@@ -25,10 +25,13 @@ export const cases = pgTable('cases', {
   finalCompensation: text('final_compensation'),
   dramaScore: integer('drama_score'),
   notableQuote: text('notable_quote'),
+  appealedFromId: uuid('appealed_from_id'),
+  isAppeal: boolean('is_appeal').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   resolvedAt: timestamp('resolved_at'),
 });
 
+// Legacy turn-based arguments (kept for old cases)
 export const arguments_ = pgTable('arguments', {
   id: uuid('id').defaultRandom().primaryKey(),
   caseId: uuid('case_id').references(() => cases.id).notNull(),
@@ -37,5 +40,19 @@ export const arguments_ = pgTable('arguments', {
   roundNumber: integer('round_number').notNull(),
   content: text('content').notNull(),
   isObjection: boolean('is_objection').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Real-time courtroom messages
+export const messages = pgTable('messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  caseId: uuid('case_id').references(() => cases.id).notNull(),
+  userId: uuid('user_id').references(() => users.id),
+  sender: varchar('sender', { length: 20 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(),
+  content: text('content').notNull(),
+  metadata: text('metadata'),
+  attachmentUrl: text('attachment_url'),
+  attachmentType: varchar('attachment_type', { length: 20 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

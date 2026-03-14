@@ -102,13 +102,13 @@ export default function NewCasePage() {
         <div className="mt-4 flex gap-3">
           <button
             onClick={() => navigate(`/case/${created.id}`)}
-            className="btn-brutal flex-1 bg-court-dark text-court-gold text-sm"
+            className="btn-brutal flex-1 bg-court-ink text-court-gold text-sm border-court-ink"
           >
             Go to Courtroom
           </button>
           <button
             onClick={() => navigate('/dashboard')}
-            className="btn-brutal flex-1 bg-white text-sm"
+            className="btn-brutal flex-1 bg-court-card text-sm"
           >
             Dashboard
           </button>
@@ -121,7 +121,7 @@ export default function NewCasePage() {
     <div className="mx-auto max-w-2xl">
       <button
         onClick={() => navigate(-1)}
-        className="btn-brutal mb-6 bg-white py-2 px-4 text-sm"
+        className="btn-brutal mb-6 bg-court-card py-2 px-4 text-sm"
       >
         <ArrowLeft className="h-4 w-4" />
         Back
@@ -133,7 +133,7 @@ export default function NewCasePage() {
       >
         <div className="card-brutal bg-court-gold mb-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-court-dark bg-court-dark shadow-brutal-sm">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-court-ink bg-court-ink shadow-brutal-sm">
               <Gavel className="h-6 w-6 text-court-gold" />
             </div>
             <div>
@@ -219,7 +219,7 @@ export default function NewCasePage() {
                     className={`flex flex-col items-center gap-1.5 rounded-xl border-2 border-court-dark p-3 text-center transition-all cursor-pointer ${
                       selected
                         ? 'bg-court-gold shadow-brutal'
-                        : 'bg-white shadow-brutal-sm hover:shadow-brutal'
+                        : 'bg-court-card shadow-brutal-sm hover:shadow-brutal'
                     }`}
                   >
                     <span className="text-2xl">{persona.emoji}</span>
@@ -239,7 +239,7 @@ export default function NewCasePage() {
             disabled={!isValid || submitting}
             className={`btn-brutal w-full py-3 text-base ${
               isValid && !submitting
-                ? 'bg-court-dark text-court-gold'
+                ? 'bg-court-ink text-court-gold border-court-ink'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none border-gray-300'
             }`}
           >

@@ -7,6 +7,7 @@ export const JUDGE_PERSONAS = [
 
 export const CASE_STATUSES = {
   pending_defendant: { label: 'Awaiting Defendant', color: 'court-gold' },
+  in_session: { label: 'In Session', color: 'court-blue' },
   opening_statements: { label: 'Opening Statements', color: 'court-blue' },
   rebuttals: { label: 'Rebuttals', color: 'court-blue' },
   closing_arguments: { label: 'Closing Arguments', color: 'court-blue' },

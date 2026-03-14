@@ -1,61 +1,193 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useUser } from '@clerk/react';
+import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Gavel,
   Send,
+  Gavel,
   AlertTriangle,
-  ArrowLeft,
-  MessageCircle,
-  Clock,
-  User,
   Loader2,
+  Clock,
+  Shield,
+  User,
+  ArrowRight,
+  Wifi,
+  WifiOff,
+  Paperclip,
+  X as XIcon,
+  Image,
 } from 'lucide-react';
-import { JUDGE_PERSONAS, CASE_STATUSES } from '../lib/mockData';
-import { formatDate, formatTime, getStatusColor } from '../lib/utils';
 import { api } from '../services/api';
+import { JUDGE_PERSONAS } from '../lib/mockData';
+import { formatDate } from '../lib/utils';
 
-function ArgumentBubble({ argument, isPlaintiff }) {
+function JudgeTypingIndicator() {
   return (
     <motion.div
-      initial={{ opacity: 0, x: isPlaintiff ? -20 : 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className={`flex gap-3 ${isPlaintiff ? '' : 'flex-row-reverse'}`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      className="flex justify-center my-3"
     >
-      <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border-2 border-court-dark font-bold text-sm shadow-brutal-sm ${
-          isPlaintiff ? 'bg-court-blue text-white' : 'bg-court-red text-white'
-        }`}
-      >
-        <User className="h-5 w-5" />
+      <div className="flex items-center gap-2 rounded-xl border-2 border-court-dark bg-court-gold px-4 py-2 shadow-brutal-sm">
+        <Gavel className="h-4 w-4 animate-bounce" />
+        <span className="text-sm font-bold">Judge is deliberating</span>
+        <span className="flex gap-0.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-court-dark animate-bounce" style={{ animationDelay: '0ms' }} />
+          <span className="h-1.5 w-1.5 rounded-full bg-court-dark animate-bounce" style={{ animationDelay: '150ms' }} />
+          <span className="h-1.5 w-1.5 rounded-full bg-court-dark animate-bounce" style={{ animationDelay: '300ms' }} />
+        </span>
       </div>
-      <div
-        className={`card-brutal flex-1 ${
-          isPlaintiff ? 'bg-blue-50' : 'bg-red-50'
-        }`}
+    </motion.div>
+  );
+}
+
+function TimeoutBanner({ timeout, side }) {
+  const [remaining, setRemaining] = useState(timeout.duration);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (remaining <= 0) return null;
+
+  const isYou = timeout.target === side;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0 }}
+      className={`mx-4 my-2 flex items-center gap-3 rounded-xl border-2 border-court-dark p-3 shadow-brutal-sm ${
+        isYou ? 'bg-court-red/20' : 'bg-court-gold-light'
+      }`}
+    >
+      <Clock className="h-5 w-5 shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm font-bold">
+          {isYou ? 'You have been muted!' : `${timeout.target} has been muted`}
+        </p>
+        <p className="text-xs text-court-dark/60">{timeout.reason}</p>
+      </div>
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg border-2 border-court-dark bg-court-card font-black text-lg shadow-brutal-sm">
+        {remaining}s
+      </div>
+    </motion.div>
+  );
+}
+
+function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
+  const isJudge = msg.sender === 'judge';
+  const isYou = msg.sender === yourSide;
+  const senderName = isJudge
+    ? 'Judge'
+    : msg.sender === 'plaintiff'
+    ? plaintiff?.username || 'Plaintiff'
+    : defendant?.username || 'Defendant';
+
+  const metadata = msg.metadata ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata) : {};
+
+  if (isJudge) {
+    const isWarning = msg.type === 'warning';
+    const isTimeout = msg.type === 'timeout';
+    const isVerdict = msg.type === 'verdict';
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex justify-center my-2 px-4"
       >
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span
-            className={`badge-brutal text-[10px] ${
-              isPlaintiff ? 'bg-court-blue text-white' : 'bg-court-red text-white'
-            }`}
-          >
-            {argument.side}
-          </span>
-          <span className="badge-brutal bg-white text-[10px]">
-            Round {argument.roundNumber}
-          </span>
-          {argument.isObjection && (
-            <span className="badge-brutal bg-court-gold text-[10px]">
-              OBJECTION!
+        <div
+          className={`max-w-lg w-full rounded-xl border-2 border-court-dark p-3 shadow-brutal-sm text-center ${
+            isVerdict
+              ? 'bg-court-gold'
+              : isWarning
+              ? 'bg-orange-100'
+              : isTimeout
+              ? 'bg-court-red/10'
+              : 'bg-court-gold-light'
+          }`}
+        >
+          <div className="flex items-center justify-center gap-1.5 mb-1">
+            <Gavel className="h-3.5 w-3.5" />
+            <span className="text-xs font-black uppercase tracking-wide">
+              {isVerdict ? 'VERDICT' : isWarning ? 'WARNING' : isTimeout ? 'ORDER' : 'JUDGE'}
             </span>
+            {(isWarning || isTimeout) && metadata.target && (
+              <span className="text-xs font-bold text-court-dark/60">
+                to {metadata.target}
+              </span>
+            )}
+          </div>
+          <p className="text-sm font-medium">{msg.content}</p>
+          {isVerdict && (
+            <div className="mt-2 text-xs font-bold text-court-dark/70">
+              The court has reached a decision.
+            </div>
           )}
         </div>
-        <p className="text-sm leading-relaxed">{argument.content}</p>
-        <p className="mt-2 text-[10px] text-court-dark/40">
-          {formatTime(argument.createdAt)}
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`flex px-4 my-1 ${isYou ? 'justify-end' : 'justify-start'}`}
+    >
+      <div className={`max-w-[75%] ${isYou ? 'items-end' : 'items-start'}`}>
+        <p className={`text-[10px] font-bold mb-0.5 px-1 ${isYou ? 'text-right' : 'text-left'} text-court-dark/50`}>
+          {senderName}
+          <span className="font-normal ml-1">
+            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
         </p>
+        <div
+          className={`rounded-xl border-2 border-court-dark px-3 py-2 shadow-brutal-sm ${
+            isYou
+              ? msg.sender === 'plaintiff'
+                ? 'bg-court-blue/20'
+                : 'bg-court-green/20'
+              : msg.sender === 'plaintiff'
+              ? 'bg-blue-50'
+              : 'bg-green-50'
+          }`}
+        >
+          <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+          {msg.attachmentUrl && (
+            <div className="mt-2">
+              {msg.attachmentType?.startsWith('image') ? (
+                <img
+                  src={msg.attachmentUrl}
+                  alt="Evidence"
+                  className="max-w-full rounded-lg border border-court-dark/20 cursor-pointer"
+                  onClick={() => window.open(msg.attachmentUrl, '_blank')}
+                />
+              ) : (
+                <a
+                  href={msg.attachmentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-bold text-court-blue underline"
+                >
+                  View Evidence <ArrowRight className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -64,425 +196,468 @@ function ArgumentBubble({ argument, isPlaintiff }) {
 export default function CourtroomPage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
-  const { user } = useUser();
-  const [caseData, setCaseData] = useState(null);
-  const [args, setArgs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [newArgument, setNewArgument] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [showObjection, setShowObjection] = useState(false);
-  const [objectionText, setObjectionText] = useState('');
-  const [requestingVerdict, setRequestingVerdict] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const { user: clerkUser } = useUser();
 
-  const fetchCase = useCallback(async () => {
-    try {
-      const data = await api.getCase(caseId);
-      setCaseData(data);
-      setArgs(data.arguments || []);
-    } catch {
-      setCaseData(null);
-    } finally {
-      setLoading(false);
+  const [socket, setSocket] = useState(null);
+  const [connected, setConnected] = useState(false);
+  const [caseData, setCaseData] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [yourSide, setYourSide] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [judgeTyping, setJudgeTyping] = useState(false);
+  const [otherTyping, setOtherTyping] = useState(false);
+  const [activeTimeout, setActiveTimeout] = useState(null);
+  const [myTimeoutEnd, setMyTimeoutEnd] = useState(0);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [error, setError] = useState('');
+  const [verdictData, setVerdictData] = useState(null);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const [forceVerdictVotes, setForceVerdictVotes] = useState({ plaintiff: false, defendant: false });
+  const [myForceVote, setMyForceVote] = useState(false);
+
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatMessages, judgeTyping, scrollToBottom]);
+
+  // Connect socket
+  useEffect(() => {
+    let s;
+
+    async function connect() {
+      try {
+        const token = await api.getAuthToken();
+        if (!token) {
+          setError('Not authenticated');
+          return;
+        }
+
+        const serverUrl = import.meta.env.DEV ? 'http://localhost:3001' : undefined;
+        s = io(serverUrl || window.location.origin, {
+          auth: { token },
+          transports: ['websocket', 'polling'],
+        });
+
+        s.on('connect', () => setConnected(true));
+        s.on('disconnect', () => setConnected(false));
+
+        s.on('case-data', (data) => {
+          setCaseData(data.caseData);
+          setChatMessages(data.messages || []);
+          setYourSide(data.yourSide);
+          s._yourSide = data.yourSide;
+        });
+
+        s.on('new-message', (msg) => {
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        });
+
+        s.on('judge-typing', (isTyping) => setJudgeTyping(isTyping));
+
+        s.on('user-typing', (data) => {
+          if (data.side !== s._yourSide) setOtherTyping(true);
+        });
+        s.on('user-stop-typing', (data) => {
+          if (data.side !== s._yourSide) setOtherTyping(false);
+        });
+
+        s.on('user-timeout', (data) => {
+          setActiveTimeout(data);
+          if (data.target === s._yourSide) {
+            setMyTimeoutEnd(Date.now() + data.duration * 1000);
+          }
+        });
+
+        s.on('force-verdict-update', (data) => {
+          setForceVerdictVotes(data.votes);
+        });
+
+        s.on('verdict-delivered', (data) => {
+          setVerdictData(data);
+          setCaseData((prev) => prev ? { ...prev, status: 'verdict_delivered' } : prev);
+        });
+
+        s.on('user-presence', (data) => {
+          setOnlineUsers(data.onlineUsers || []);
+        });
+
+        s.on('rate-limited', (data) => {
+          setRateLimited(true);
+          setError(data.message);
+          setTimeout(() => {
+            setRateLimited(false);
+            setError('');
+          }, 3000);
+        });
+
+        s.on('error', (data) => {
+          setError(data.message);
+          setTimeout(() => setError(''), 5000);
+        });
+
+        setSocket(s);
+        s.emit('join-courtroom', caseId);
+      } catch (err) {
+        setError('Failed to connect: ' + err.message);
+      }
     }
+
+    connect();
+
+    return () => {
+      if (s) s.disconnect();
+    };
   }, [caseId]);
 
+  const handleForceVerdict = () => {
+    if (!socket || myForceVote) return;
+    socket.emit('force-verdict-vote');
+    setMyForceVote(true);
+  };
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 3 * 1024 * 1024) {
+      setError('File too large. Maximum size is 3MB.');
+      setTimeout(() => setError(''), 4000);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const token = await api.getAuthToken();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Upload failed');
+      }
+
+      const data = await res.json();
+      setPendingAttachment({ url: data.url, type: data.type, name: data.name });
+    } catch (err) {
+      setError(err.message);
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSend = () => {
+    if (!socket || (!newMessage.trim() && !pendingAttachment) || rateLimited) return;
+    if (activeTimeout?.target === yourSide) return;
+
+    socket.emit('send-message', {
+      content: newMessage.trim() || (pendingAttachment ? `[Evidence: ${pendingAttachment.name}]` : ''),
+      attachmentUrl: pendingAttachment?.url || null,
+      attachmentType: pendingAttachment?.type || null,
+    });
+    setNewMessage('');
+    setPendingAttachment(null);
+    inputRef.current?.focus();
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      socket.emit('stop-typing');
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleInputChange = (e) => {
+    setNewMessage(e.target.value);
+
+    if (socket) {
+      socket.emit('typing');
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit('stop-typing');
+      }, 2000);
+    }
+  };
+
+  const persona = JUDGE_PERSONAS.find((p) => p.id === caseData?.judgePersona);
+  const isTimedOut = myTimeoutEnd > Date.now();
+  const isVerdictDelivered = caseData?.status === 'verdict_delivered';
+  const canSend = connected && !isTimedOut && !isVerdictDelivered && !rateLimited && caseData?.status === 'in_session';
+
+  // Tick to clear timeout display
   useEffect(() => {
-    fetchCase();
-  }, [fetchCase]);
-
-  // Poll for updates every 10s
-  useEffect(() => {
-    const interval = setInterval(fetchCase, 10000);
-    return () => clearInterval(interval);
-  }, [fetchCase]);
-
-  const status = caseData ? CASE_STATUSES[caseData.status] : null;
-  const persona = caseData
-    ? JUDGE_PERSONAS.find((p) => p.id === caseData.judgePersona)
-    : null;
-
-  if (loading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-court-dark/40" />
-      </div>
-    );
-  }
+    if (!myTimeoutEnd) return;
+    const remaining = myTimeoutEnd - Date.now();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setMyTimeoutEnd(0), remaining + 100);
+    return () => clearTimeout(timer);
+  }, [myTimeoutEnd]);
 
   if (!caseData) {
     return (
-      <div className="card-brutal mx-auto max-w-md py-16 text-center">
-        <Gavel className="mx-auto mb-3 h-10 w-10 text-court-dark/30" />
-        <h2 className="text-lg font-bold">Case Not Found</h2>
-        <p className="mt-1 text-sm text-court-dark/50">
-          This case doesn&apos;t exist or has been dismissed.
-        </p>
-        <Link to="/dashboard" className="btn-brutal mt-4 bg-court-gold text-sm">
-          Back to Cases
-        </Link>
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-court-dark/40" />
+          <p className="text-sm font-medium text-court-dark/50">Entering courtroom...</p>
+        </div>
       </div>
     );
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!newArgument.trim() || submitting) return;
-
-    setSubmitting(true);
-    try {
-      await api.submitArgument(caseId, { content: newArgument, isObjection: false });
-      setNewArgument('');
-      await fetchCase();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleObjection = async () => {
-    if (!objectionText.trim() || submitting) return;
-
-    setSubmitting(true);
-    try {
-      await api.submitArgument(caseId, { content: objectionText, isObjection: true });
-      setObjectionText('');
-      setShowObjection(false);
-      await fetchCase();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleRequestVerdict = async () => {
-    setRequestingVerdict(true);
-    try {
-      await api.requestVerdict(caseId);
-      navigate(`/case/${caseId}/verdict`);
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setRequestingVerdict(false);
-    }
-  };
-
-  const nonObjectionArgs = args.filter((a) => !a.isObjection);
-  const canSubmit = caseData.status !== 'verdict_delivered' && caseData.status !== 'pending_defendant' && caseData.status !== 'judging';
-  const allRoundsDone = nonObjectionArgs.length >= 6;
-  const canRequestVerdict = allRoundsDone && caseData.status !== 'verdict_delivered' && caseData.status !== 'judging';
-
-  const userObjections = args.filter((a) => a.isObjection && a.userId === caseData?.plaintiff?.id).length;
-  const objectionsLeft = 2 - userObjections;
-
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
-      {/* Main courtroom area */}
-      <div className="flex-1 min-w-0">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="btn-brutal mb-4 bg-white py-2 px-4 text-sm"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Cases
-        </button>
-
-        {/* Case header */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card-brutal mb-4 bg-court-gold"
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className={`badge-brutal ${getStatusColor(caseData.status)}`}>
-                  {status?.label}
-                </span>
-                <span className="badge-brutal bg-white">
-                  {persona?.emoji} {persona?.name}
-                </span>
-              </div>
-              <h1 className="text-xl font-black leading-tight md:text-2xl">
-                {caseData.title}
-              </h1>
-            </div>
-            <div className="flex items-center gap-2 text-sm font-bold text-court-dark/60">
-              <Clock className="h-4 w-4" />
-              {formatDate(caseData.createdAt)}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* Parties bar */}
-        <div className="card-brutal mb-4 flex items-center gap-3 py-3">
-          <div className="flex-1 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-court-dark/40">
-              Plaintiff
-            </p>
-            <p className="text-base font-black text-court-blue">
-              {caseData.plaintiff?.username || '...'}
-            </p>
-          </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-court-dark bg-court-gold font-black text-xs shadow-brutal-sm">
-            VS
-          </div>
-          <div className="flex-1 text-center">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-court-dark/40">
-              Defendant
-            </p>
-            <p className="text-base font-black text-court-red">
-              {caseData.defendant?.username || 'Waiting...'}
-            </p>
+    <div className="mx-auto flex h-[calc(100vh-5rem)] max-w-4xl flex-col">
+      {/* Header */}
+      <div className="card-brutal mb-2 flex items-center justify-between gap-3 p-3">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-black truncate">{caseData.title}</h1>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <span className="text-xs font-bold text-court-dark/50">
+              {persona?.emoji} {persona?.name}
+            </span>
+            {caseData.isAppeal && (
+              <span className="rounded-lg border border-court-red bg-court-red/10 px-2 py-0.5 text-[10px] font-black text-court-red">
+                APPEAL
+              </span>
+            )}
           </div>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Online indicators */}
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
+              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.plaintiff?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
+              <span className="text-[10px] font-bold">{caseData.plaintiff?.username}</span>
+            </div>
+            <span className="text-xs font-bold text-court-dark/30">vs</span>
+            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
+              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.defendant?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
+              <span className="text-[10px] font-bold">{caseData.defendant?.username}</span>
+            </div>
+          </div>
+          {connected ? (
+            <Wifi className="h-4 w-4 text-court-green" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-court-red" />
+          )}
+        </div>
+      </div>
 
-        {/* Round indicator */}
-        <div className="mb-4 flex gap-2">
-          {Array.from({ length: caseData.totalRounds || 3 }).map((_, i) => (
-            <div
-              key={i}
-              className={`flex-1 h-2 rounded-full border border-court-dark ${
-                i < (caseData.roundsCompleted || 0) ? 'bg-court-gold' : 'bg-gray-100'
-              }`}
+      {/* Case description bar */}
+      <div className="mx-1 mb-2 rounded-lg border border-court-dark/10 bg-court-gold-light/50 px-3 py-2">
+        <p className="text-xs">
+          <span className="font-bold">Complaint:</span> {caseData.description}
+        </p>
+        <p className="text-xs mt-0.5">
+          <span className="font-bold">Seeks:</span> {caseData.requestedCompensation}
+        </p>
+      </div>
+
+      {/* Chat messages */}
+      <div className="flex-1 overflow-y-auto rounded-xl border-2 border-court-dark bg-court-card shadow-brutal">
+        <div className="py-3">
+          {chatMessages.length === 0 && !judgeTyping && (
+            <div className="flex flex-col items-center justify-center py-16 text-center text-court-dark/30">
+              <Gavel className="h-10 w-10 mb-2" />
+              <p className="text-sm font-bold">Waiting for the session to begin...</p>
+              <p className="text-xs mt-1">Both parties must be present for the trial to start.</p>
+            </div>
+          )}
+
+          {chatMessages.map((msg) => (
+            <ChatMessage
+              key={msg.id}
+              msg={msg}
+              yourSide={yourSide}
+              plaintiff={caseData.plaintiff}
+              defendant={caseData.defendant}
             />
           ))}
-        </div>
 
-        {/* Arguments */}
-        <div className="flex flex-col gap-4 mb-4">
-          {args.length > 0 ? (
-            args.map((arg) => (
-              <ArgumentBubble
-                key={arg.id}
-                argument={arg}
-                isPlaintiff={arg.side === 'plaintiff'}
-              />
-            ))
-          ) : (
-            <div className="card-brutal py-12 text-center">
-              <MessageCircle className="mx-auto mb-3 h-10 w-10 text-court-dark/20" />
-              <p className="font-bold">No arguments yet</p>
-              <p className="mt-1 text-sm text-court-dark/50">
-                {caseData.status === 'pending_defendant'
-                  ? 'Waiting for the defendant to join...'
-                  : 'Be the first to present your case.'}
-              </p>
+          <AnimatePresence>
+            {activeTimeout && (
+              <TimeoutBanner timeout={activeTimeout} side={yourSide} />
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {judgeTyping && <JudgeTypingIndicator />}
+          </AnimatePresence>
+
+          {otherTyping && !judgeTyping && (
+            <div className="px-4 py-1">
+              <span className="text-[10px] font-medium text-court-dark/40 italic">
+                {yourSide === 'plaintiff' ? caseData.defendant?.username : caseData.plaintiff?.username} is typing...
+              </span>
             </div>
           )}
+
+          <div ref={messagesEndRef} />
         </div>
+      </div>
 
-        {/* Stuck judging - reset */}
-        {caseData.status === 'judging' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4">
-            <div className="card-brutal border-court-gold bg-court-gold-light text-center">
-              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-court-dark/40" />
-              <p className="font-bold text-sm">Judge is deliberating...</p>
-              <p className="text-xs text-court-dark/50 mt-1 mb-3">If this seems stuck, you can reset and try again.</p>
-              <button
-                onClick={async () => {
-                  setResetting(true);
-                  try {
-                    await api.resetCase(caseId);
-                    await fetchCase();
-                  } catch (err) {
-                    alert(err.message);
-                  } finally {
-                    setResetting(false);
-                  }
-                }}
-                disabled={resetting}
-                className="btn-brutal bg-white py-2 px-4 text-xs"
-              >
-                {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                Reset & Retry
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Request verdict button */}
-        {canRequestVerdict && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4">
-            <button
-              onClick={handleRequestVerdict}
-              disabled={requestingVerdict}
-              className="btn-brutal w-full bg-court-gold py-3 text-base"
-            >
-              {requestingVerdict ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <Gavel className="h-5 w-5" />
-              )}
-              {requestingVerdict ? 'Judge is deliberating...' : 'Request Verdict from AI Judge'}
-            </button>
-          </motion.div>
-        )}
-
-        {/* Input area */}
-        {canSubmit && !allRoundsDone && (
-          <motion.form
-            initial={{ opacity: 0, y: 10 }}
+      {/* Verdict banner */}
+      <AnimatePresence>
+        {verdictData && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            onSubmit={handleSubmit}
-            className="card-brutal"
+            className="mt-2"
           >
-            <textarea
-              value={newArgument}
-              onChange={(e) => setNewArgument(e.target.value)}
-              placeholder="Present your argument to the court..."
-              className="textarea-brutal mb-3"
-              rows={3}
-              maxLength={2000}
-            />
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="button"
-                onClick={() => setShowObjection(!showObjection)}
-                disabled={objectionsLeft <= 0}
-                className={`btn-brutal py-2 px-4 text-xs ${objectionsLeft > 0 ? 'bg-court-gold' : 'bg-gray-200 text-gray-400 shadow-none border-gray-300 cursor-not-allowed'}`}
-              >
-                <AlertTriangle className="h-3.5 w-3.5" />
-                OBJECTION! ({objectionsLeft} left)
-              </button>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-court-dark/40">
-                  {newArgument.length}/2000
-                </span>
-                <button
-                  type="submit"
-                  disabled={!newArgument.trim() || submitting}
-                  className={`btn-brutal py-2 px-6 text-sm ${
-                    newArgument.trim() && !submitting
-                      ? 'bg-court-dark text-court-gold'
-                      : 'bg-gray-200 text-gray-400 shadow-none border-gray-300 cursor-not-allowed'
-                  }`}
-                >
-                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Submit
-                </button>
-              </div>
-            </div>
-          </motion.form>
-        )}
-
-        {/* Objection panel */}
-        <AnimatePresence>
-          {showObjection && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-3 overflow-hidden"
-            >
-              <div className="card-brutal border-court-gold bg-court-gold-light">
-                <h4 className="mb-2 font-bold text-sm flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  File an Objection
-                </h4>
-                <p className="mb-3 text-xs text-court-dark/60">
-                  Objections let you counter a specific point out of turn. Use them wisely.
-                </p>
-                <textarea
-                  value={objectionText}
-                  onChange={(e) => setObjectionText(e.target.value)}
-                  placeholder="State your objection..."
-                  className="textarea-brutal mb-2"
-                  rows={2}
-                />
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowObjection(false)}
-                    className="btn-brutal bg-white py-1.5 px-4 text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleObjection}
-                    disabled={!objectionText.trim() || submitting}
-                    className="btn-brutal bg-court-gold py-1.5 px-4 text-xs"
-                  >
-                    <AlertTriangle className="h-3 w-3" />
-                    Submit Objection
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Verdict delivered banner */}
-        {caseData.status === 'verdict_delivered' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4">
             <Link
               to={`/case/${caseId}/verdict`}
-              className="card-brutal flex items-center justify-center gap-3 bg-court-gold py-4 text-center"
+              className="card-brutal flex items-center justify-between bg-court-gold p-4 card-hover"
             >
-              <Gavel className="h-6 w-6" />
-              <span className="text-lg font-black">Verdict has been delivered — View it</span>
+              <div className="flex items-center gap-3">
+                <Gavel className="h-6 w-6" />
+                <div>
+                  <p className="font-black">The Verdict is In!</p>
+                  <p className="text-sm text-court-dark/70">Click to see the full ruling</p>
+                </div>
+              </div>
+              <ArrowRight className="h-5 w-5" />
             </Link>
           </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
-      {/* Sidebar - case details */}
-      <aside className="w-full lg:w-80 shrink-0">
-        <div className="card-brutal sticky top-24">
-          <h3 className="mb-3 text-sm font-bold uppercase tracking-wide text-court-dark/50">
-            Case Details
-          </h3>
+      {/* Error bar */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mx-1 mt-1 flex items-center gap-2 rounded-lg bg-court-red/10 px-3 py-1.5 text-xs font-bold text-court-red"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          <div className="mb-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-court-dark/40 mb-1">
-              Description
-            </p>
-            <p className="text-sm leading-relaxed">{caseData.description}</p>
+      {/* Force verdict vote */}
+      {!isVerdictDelivered && caseData?.status === 'in_session' && (
+        <div className="mt-2 mx-1 flex items-center justify-between rounded-xl border-2 border-court-dark/20 bg-court-gold-light/50 px-3 py-2">
+          <div className="flex items-center gap-2 text-xs">
+            <Gavel className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-bold">Force Verdict</span>
+            <span className="text-court-dark/50">
+              ({[forceVerdictVotes.plaintiff && 'Plaintiff', forceVerdictVotes.defendant && 'Defendant'].filter(Boolean).join(', ') || 'No votes'})
+            </span>
           </div>
-
-          <div className="mb-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-court-dark/40 mb-1">
-              Demanded Compensation
-            </p>
-            <div className="rounded-lg border-2 border-court-gold bg-court-gold-light px-3 py-2">
-              <p className="text-sm font-semibold">{caseData.requestedCompensation}</p>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-court-dark/40 mb-1">
-              Judge
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{persona?.emoji}</span>
-              <div>
-                <p className="text-sm font-bold">{persona?.name}</p>
-                <p className="text-xs text-court-dark/50">{persona?.description}</p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-court-dark/40 mb-1">
-              Progress
-            </p>
-            <p className="text-sm">
-              Round <span className="font-bold">{caseData.roundsCompleted || 0}</span> of{' '}
-              <span className="font-bold">{caseData.totalRounds || 3}</span>
-            </p>
-          </div>
-
-          {caseData.inviteCode && caseData.status === 'pending_defendant' && (
-            <div className="mt-4 rounded-lg border-2 border-dashed border-court-dark/30 p-3 text-center">
-              <p className="text-xs font-bold text-court-dark/50 mb-1">Invite Code</p>
-              <p className="font-mono font-bold text-lg">{caseData.inviteCode}</p>
-            </div>
-          )}
+          <button
+            onClick={handleForceVerdict}
+            disabled={myForceVote}
+            className={`btn-brutal text-xs py-1 px-3 ${
+              myForceVote
+                ? 'bg-court-gold border-court-gold-dark opacity-70 cursor-not-allowed'
+                : 'bg-court-card'
+            }`}
+          >
+            {myForceVote ? 'Voted' : 'Vote'}
+          </button>
         </div>
-      </aside>
+      )}
+
+      {/* Pending attachment preview */}
+      {pendingAttachment && (
+        <div className="mt-2 mx-1 flex items-center gap-2 rounded-lg border border-court-dark/20 bg-court-gold-light/50 px-3 py-1.5">
+          <Image className="h-4 w-4 shrink-0" />
+          <span className="text-xs font-medium truncate flex-1">{pendingAttachment.name}</span>
+          <button onClick={() => setPendingAttachment(null)} className="p-0.5 hover:bg-court-dark/10 rounded">
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Input area */}
+      {!isVerdictDelivered && (
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!canSend || uploading}
+            className="btn-brutal bg-court-card p-2.5 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            title="Attach evidence (max 3MB)"
+          >
+            {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Paperclip className="h-5 w-5" />}
+          </button>
+          <div className="relative flex-1">
+            <input
+              ref={inputRef}
+              value={newMessage}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                isTimedOut
+                  ? 'You are muted by the judge...'
+                  : !connected
+                  ? 'Reconnecting...'
+                  : caseData?.status !== 'in_session'
+                  ? 'Waiting for both parties...'
+                  : 'Present your argument...'
+              }
+              disabled={!canSend}
+              maxLength={2000}
+              className="input-brutal pr-16 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-court-dark/30">
+              {newMessage.length}/2000
+            </span>
+          </div>
+          <button
+            onClick={handleSend}
+            disabled={!canSend || (!newMessage.trim() && !pendingAttachment)}
+            className="btn-brutal bg-court-gold p-2.5 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          >
+            <Send className="h-5 w-5" />
+          </button>
+        </div>
+      )}
+
+      {/* Already delivered - go to verdict */}
+      {isVerdictDelivered && !verdictData && (
+        <div className="mt-2">
+          <Link
+            to={`/case/${caseId}/verdict`}
+            className="btn-brutal w-full justify-center bg-court-gold py-3"
+          >
+            <Gavel className="h-5 w-5" />
+            View Verdict
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
