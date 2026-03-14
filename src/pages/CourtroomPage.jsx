@@ -17,6 +17,7 @@ import {
   Paperclip,
   X as XIcon,
   Image,
+  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { JUDGE_PERSONAS } from '../lib/mockData';
@@ -332,7 +333,14 @@ export default function CourtroomPage() {
 
     connect();
 
+    const timeout = setTimeout(() => {
+      if (!s?.connected) {
+        setError('Connection timed out. The server may be waking up — try again in a moment.');
+      }
+    }, 15000);
+
     return () => {
+      clearTimeout(timeout);
       if (s) s.disconnect();
     };
   }, [caseId]);
@@ -450,6 +458,23 @@ export default function CourtroomPage() {
   }, [myTimeoutEnd]);
 
   if (!caseData) {
+    if (error) {
+      return (
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <div className="card-brutal max-w-md text-center">
+            <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-court-red" />
+            <h2 className="text-lg font-black">Failed to enter courtroom</h2>
+            <p className="mt-2 text-sm text-court-dark/60">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn-brutal mt-4 bg-court-gold text-sm"
+            >
+              <RefreshCw className="h-4 w-4" /> Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -477,17 +502,17 @@ export default function CourtroomPage() {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 min-w-0">
           {/* Online indicators */}
-          <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
-              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.plaintiff?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
-              <span className="text-[10px] font-bold">{caseData.plaintiff?.username}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1 overflow-hidden max-w-24">
+              <div className={`h-2 w-2 shrink-0 rounded-full ${onlineUsers.includes(caseData.plaintiff?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
+              <span className="text-[10px] font-bold truncate">{caseData.plaintiff?.username}</span>
             </div>
-            <span className="text-xs font-bold text-court-dark/30">vs</span>
-            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
-              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.defendant?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
-              <span className="text-[10px] font-bold">{caseData.defendant?.username}</span>
+            <span className="text-xs font-bold text-court-dark/30 shrink-0">vs</span>
+            <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1 overflow-hidden max-w-24">
+              <div className={`h-2 w-2 shrink-0 rounded-full ${onlineUsers.includes(caseData.defendant?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
+              <span className="text-[10px] font-bold truncate">{caseData.defendant?.username}</span>
             </div>
           </div>
           {connected ? (
@@ -500,10 +525,10 @@ export default function CourtroomPage() {
 
       {/* Case description bar */}
       <div className="mx-1 mb-2 rounded-lg border border-court-dark/10 bg-court-gold-light/50 px-3 py-2">
-        <p className="text-xs">
+        <p className="text-xs line-clamp-2">
           <span className="font-bold">Complaint:</span> {caseData.description}
         </p>
-        <p className="text-xs mt-0.5">
+        <p className="text-xs mt-0.5 line-clamp-2">
           <span className="font-bold">Seeks:</span> {caseData.requestedCompensation}
         </p>
       </div>

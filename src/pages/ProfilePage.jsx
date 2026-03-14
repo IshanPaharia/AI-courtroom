@@ -88,6 +88,7 @@ export default function ProfilePage() {
   const [editingName, setEditingName] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     if (!isSignedIn) {
@@ -109,12 +110,13 @@ export default function ProfilePage() {
   const handleSaveUsername = async () => {
     if (!newUsername.trim() || newUsername.trim().length < 2) return;
     setSaving(true);
+    setSaveError('');
     try {
       const updated = await api.updateMe({ username: newUsername.trim() });
       setData((prev) => ({ ...prev, user: updated }));
       setEditingName(false);
     } catch (err) {
-      alert(err.message);
+      setSaveError(err.message);
     } finally {
       setSaving(false);
     }
@@ -176,28 +178,33 @@ export default function ProfilePage() {
           {/* Name + email */}
           <div className="flex-1 text-center sm:text-left">
             {editingName ? (
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  className="input-brutal text-lg font-black"
-                  maxLength={50}
-                  autoFocus
-                />
-                <button
-                  onClick={handleSaveUsername}
-                  disabled={saving}
-                  className="btn-brutal bg-court-ink text-court-gold p-2 border-court-ink"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                </button>
-                <button
-                  onClick={() => { setEditingName(false); setNewUsername(user.username); }}
-                  className="btn-brutal bg-court-card p-2"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+              <div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <input
+                    type="text"
+                    value={newUsername}
+                    onChange={(e) => { setNewUsername(e.target.value); setSaveError(''); }}
+                    className="input-brutal min-w-0 flex-1 text-lg font-black"
+                    maxLength={50}
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveUsername}
+                    disabled={saving}
+                    className="btn-brutal shrink-0 bg-court-ink text-court-gold p-2 border-court-ink"
+                  >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => { setEditingName(false); setNewUsername(user.username); setSaveError(''); }}
+                    className="btn-brutal shrink-0 bg-court-card p-2"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                {saveError && (
+                  <p className="mt-1 text-xs font-bold text-court-red">{saveError}</p>
+                )}
               </div>
             ) : (
               <div className="flex items-center justify-center gap-2 sm:justify-start">

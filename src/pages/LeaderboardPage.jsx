@@ -32,14 +32,14 @@ function RankBadge({ rank }) {
   );
 }
 
-function StatCard({ label, value, icon: Icon }) {
+function StatCard({ label, value, icon: Icon, truncate: shouldTruncate }) {
   return (
-    <div className="card-brutal flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-court-dark bg-court-gold-light shadow-brutal-sm">
+    <div className="card-brutal flex items-center gap-3 min-w-0">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-court-dark bg-court-gold-light shadow-brutal-sm">
         <Icon className="h-5 w-5" />
       </div>
-      <div>
-        <p className="text-2xl font-black">{value}</p>
+      <div className="min-w-0">
+        <p className={`text-2xl font-black ${shouldTruncate ? 'truncate' : ''}`}>{value}</p>
         <p className="text-xs font-semibold uppercase tracking-wide text-court-dark/50">{label}</p>
       </div>
     </div>
@@ -91,6 +91,7 @@ export default function LeaderboardPage() {
             label="Top Arguer"
             value={topWinner?.username || '-'}
             icon={Crown}
+            truncate
           />
         </div>
       )}
@@ -162,20 +163,20 @@ export default function LeaderboardPage() {
                 </div>
 
                 {/* Player */}
-                <div className="col-span-5 flex items-center gap-3">
+                <div className="col-span-5 flex items-center gap-3 min-w-0">
                   {user.avatarUrl ? (
                     <img
                       src={user.avatarUrl}
                       alt=""
-                      className="h-9 w-9 rounded-lg border-2 border-court-dark object-cover"
+                      className="h-9 w-9 shrink-0 rounded-lg border-2 border-court-dark object-cover"
                     />
                   ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-court-dark bg-court-gold-light font-bold text-sm">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-court-dark bg-court-gold-light font-bold text-sm">
                       {user.username?.[0]?.toUpperCase() || '?'}
                     </div>
                   )}
-                  <div>
-                    <p className={`font-bold ${isTop3 ? 'text-base' : 'text-sm'}`}>
+                  <div className="min-w-0">
+                    <p className={`font-bold truncate max-w-32 sm:max-w-none ${isTop3 ? 'text-base' : 'text-sm'}`}>
                       {user.username}
                     </p>
                     <p className="text-[10px] text-court-dark/40 sm:hidden">
