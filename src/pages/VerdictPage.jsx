@@ -8,6 +8,7 @@ import {
   Quote,
   Star,
   Share2,
+  Check,
   RotateCcw,
   Loader2,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ export default function VerdictPage() {
   const [loading, setLoading] = useState(true);
   const [appealCase, setAppealCase] = useState(null);
   const [appealing, setAppealing] = useState(false);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -126,6 +128,23 @@ export default function VerdictPage() {
   };
   const winnerName = winnerMap[caseData.verdictWinner] || 'Unknown';
   const winnerLabel = caseData.verdictWinner === 'compromise' ? 'Both Sides' : caseData.verdictWinner?.replace('_wins', '');
+
+  const handleShare = async () => {
+    const text = `AI Courtroom Verdict: "${caseData.title}" — ${winnerName} wins! Drama score: ${caseData.dramaScore}/10. "${caseData.notableQuote}"`;
+    const url = window.location.href;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'AI Courtroom Verdict', text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+      }
+    } catch {
+      // User cancelled share dialog
+    }
+  };
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -290,9 +309,9 @@ export default function VerdictPage() {
         transition={{ delay: 1.4 }}
         className="flex flex-col gap-3 sm:flex-row"
       >
-        <button className="btn-brutal flex-1 bg-court-gold text-sm">
-          <Share2 className="h-4 w-4" />
-          Share Verdict
+        <button onClick={handleShare} className="btn-brutal flex-1 bg-court-gold text-sm">
+          {shared ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
+          {shared ? 'Copied!' : 'Share Verdict'}
         </button>
         {!appealCase && !caseData.isAppeal && (
           <button

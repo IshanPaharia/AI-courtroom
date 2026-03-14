@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { cases, users, messages } from '../db/schema.js';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import { getJudgeInterjection } from '../services/judge.js';
 import { verifyToken } from '@clerk/express';
 
@@ -16,6 +16,7 @@ function getRoom(caseId) {
       rateLimits: {},
       onlineUsers: new Set(),
       forceVerdictVotes: { plaintiff: false, defendant: false },
+      objections: { plaintiff: 0, defendant: 0 },
     });
   }
   return roomState.get(caseId);
@@ -270,6 +271,12 @@ export function setupCourtroomSocket(io) {
         room.onlineUsers.add(userId);
 
         const existingMessages = await loadMessages(caseId);
+
+        // Restore objection counts from DB
+        const objectionMsgs = existingMessages.filter((m) => m.type === 'objection');
+        room.objections.plaintiff = objectionMsgs.filter((m) => m.sender === 'plaintiff').length;
+        room.objections.defendant = objectionMsgs.filter((m) => m.sender === 'defendant').length;
+
         socket.emit('case-data', {
           caseData: {
             id: caseData.id,
@@ -285,6 +292,7 @@ export function setupCourtroomSocket(io) {
           },
           messages: existingMessages,
           yourSide: socket.side,
+          objections: { ...room.objections },
         });
 
         io.to(caseId).emit('user-presence', {
@@ -372,6 +380,55 @@ export function setupCourtroomSocket(io) {
       } catch (err) {
         console.error('Send message error:', err);
         socket.emit('error', { message: 'Failed to send message' });
+      }
+    });
+
+    socket.on('send-objection', async ({ content }) => {
+      try {
+        const caseId = socket.caseId;
+        if (!caseId) return socket.emit('error', { message: 'Not in a courtroom' });
+
+        const caseData = await loadCaseWithUsers(caseId);
+        if (!caseData || caseData.status !== 'in_session') {
+          return socket.emit('error', { message: 'Courtroom is not in session' });
+        }
+
+        const userId = socket.dbUser.id;
+        const room = getRoom(caseId);
+        const side = socket.side;
+
+        if (isTimedOut(room, userId)) {
+          const remaining = Math.ceil((room.timeouts[userId] - Date.now()) / 1000);
+          return socket.emit('error', { message: `You are timed out. ${remaining}s remaining.` });
+        }
+
+        if (room.objections[side] >= 2) {
+          return socket.emit('error', { message: 'No objection tokens remaining!' });
+        }
+
+        if (!content || content.trim().length === 0) {
+          return socket.emit('error', { message: 'Objection must include a reason' });
+        }
+
+        room.objections[side]++;
+
+        const [savedMsg] = await db.insert(messages).values({
+          caseId,
+          userId,
+          sender: side,
+          type: 'objection',
+          content: content.trim(),
+          metadata: null,
+        }).returning();
+
+        io.to(caseId).emit('new-message', savedMsg);
+        io.to(caseId).emit('objection-update', { objections: { ...room.objections } });
+
+        // Objections always trigger the judge immediately
+        triggerJudge(io, caseId);
+      } catch (err) {
+        console.error('Send objection error:', err);
+        socket.emit('error', { message: 'Failed to send objection' });
       }
     });
 

@@ -1,17 +1,17 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Gavel, Users, MessageSquare, Award, Zap, Shield } from 'lucide-react';
+import { Gavel, Users, MessageSquare, Award, Zap, AlertTriangle } from 'lucide-react';
 
 const FEATURES = [
   {
     icon: Users,
     title: 'Two Sides, One Truth',
-    description: 'Plaintiff files the case, defendant responds. Structured rounds keep it fair.',
+    description: 'Plaintiff files, defendant joins via invite link. Argue it out in a real-time courtroom.',
   },
   {
     icon: MessageSquare,
-    title: 'Argue Your Case',
-    description: 'Opening statements, rebuttals, and closing arguments. Make every word count.',
+    title: 'Live Courtroom Chat',
+    description: 'Chat in real-time while the AI judge watches, comments, and can mute you if you get out of line.',
   },
   {
     icon: Gavel,
@@ -29,9 +29,9 @@ const FEATURES = [
     description: 'Pick your judge: Strict, Chill, Drama Queen, or Pirate. Each has their own style.',
   },
   {
-    icon: Shield,
+    icon: AlertTriangle,
     title: 'Objection System',
-    description: 'Got 2 objection tokens. Use them wisely to counter your opponent out of turn.',
+    description: 'Got 2 objection tokens. Use them to force the judge to address your point immediately.',
   },
 ];
 
@@ -100,7 +100,7 @@ export default function HomePage() {
                 <h3 className="font-bold">{step}</h3>
                 <p className="mt-1 text-sm text-court-dark/70">
                   {i === 0 && 'Describe the conflict and what compensation you want.'}
-                  {i === 1 && 'Both sides get 3 rounds to present their arguments.'}
+                  {i === 1 && 'Both sides argue in real-time with an AI judge watching and refereeing.'}
                   {i === 2 && 'The AI Judge delivers the final verdict and compensation.'}
                 </p>
               </div>

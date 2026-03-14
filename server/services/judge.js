@@ -101,7 +101,8 @@ export async function getJudgeInterjection({ caseData, chatMessages, persona = '
       const name = m.sender === 'plaintiff' ? plaintiffName
         : m.sender === 'defendant' ? defendantName
         : 'Judge';
-      const prefix = m.type === 'warning' ? '[WARNING] '
+      const prefix = m.type === 'objection' ? '[OBJECTION] '
+        : m.type === 'warning' ? '[WARNING] '
         : m.type === 'timeout' ? '[TIMEOUT] '
         : m.type === 'comment' ? '[JUDGE] '
         : '';

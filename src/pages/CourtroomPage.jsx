@@ -95,6 +95,7 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
     ? plaintiff?.username || 'Plaintiff'
     : defendant?.username || 'Defendant';
 
+  const isObjection = msg.type === 'objection';
   const metadata = msg.metadata ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata) : {};
 
   if (isJudge) {
@@ -155,17 +156,25 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
           </span>
         </p>
         <div
-          className={`rounded-xl border-2 border-court-dark px-3 py-2 shadow-brutal-sm ${
-            isYou
+          className={`rounded-xl border-2 px-3 py-2 shadow-brutal-sm ${
+            isObjection
+              ? 'border-court-red bg-court-red/10'
+              : isYou
               ? msg.sender === 'plaintiff'
-                ? 'bg-court-blue/20'
-                : 'bg-court-green/20'
+                ? 'border-court-dark bg-court-blue/20'
+                : 'border-court-dark bg-court-green/20'
               : msg.sender === 'plaintiff'
-              ? 'bg-blue-50'
-              : 'bg-green-50'
+              ? 'border-court-dark bg-blue-50'
+              : 'border-court-dark bg-green-50'
           }`}
         >
-          <p className="text-sm whitespace-pre-wrap wrap-break-word">{msg.content}</p>
+          {isObjection && (
+            <div className="flex items-center gap-1 mb-1">
+              <AlertTriangle className="h-3 w-3 text-court-red" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-court-red">Objection!</span>
+            </div>
+          )}
+          <p className={`text-sm whitespace-pre-wrap wrap-break-word ${isObjection ? 'font-semibold' : ''}`}>{msg.content}</p>
           {msg.attachmentUrl && (
             <div className="mt-2">
               {msg.attachmentType?.startsWith('image') ? (
@@ -216,6 +225,7 @@ export default function CourtroomPage() {
   const [pendingAttachment, setPendingAttachment] = useState(null);
   const [forceVerdictVotes, setForceVerdictVotes] = useState({ plaintiff: false, defendant: false });
   const [myForceVote, setMyForceVote] = useState(false);
+  const [objectionCounts, setObjectionCounts] = useState({ plaintiff: 0, defendant: 0 });
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -256,6 +266,7 @@ export default function CourtroomPage() {
           setChatMessages(data.messages || []);
           setYourSide(data.yourSide);
           s._yourSide = data.yourSide;
+          if (data.objections) setObjectionCounts(data.objections);
         });
 
         s.on('new-message', (msg) => {
@@ -283,6 +294,10 @@ export default function CourtroomPage() {
 
         s.on('force-verdict-update', (data) => {
           setForceVerdictVotes(data.votes);
+        });
+
+        s.on('objection-update', (data) => {
+          setObjectionCounts(data.objections);
         });
 
         s.on('verdict-delivered', (data) => {
@@ -326,6 +341,21 @@ export default function CourtroomPage() {
     if (!socket || myForceVote) return;
     socket.emit('force-verdict-vote');
     setMyForceVote(true);
+  };
+
+  const handleObjection = () => {
+    if (!socket || !newMessage.trim()) return;
+    const myCount = objectionCounts[yourSide] || 0;
+    if (myCount >= 2) return;
+
+    socket.emit('send-objection', { content: newMessage.trim() });
+    setNewMessage('');
+    inputRef.current?.focus();
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      socket.emit('stop-typing');
+    }
   };
 
   const handleFileSelect = async (e) => {
@@ -408,6 +438,7 @@ export default function CourtroomPage() {
   const isTimedOut = myTimeoutEnd > Date.now();
   const isVerdictDelivered = caseData?.status === 'verdict_delivered';
   const canSend = connected && !isTimedOut && !isVerdictDelivered && !rateLimited && caseData?.status === 'in_session';
+  const myObjectionsLeft = 2 - (objectionCounts[yourSide] || 0);
 
   // Tick to clear timeout display
   useEffect(() => {
@@ -636,6 +667,17 @@ export default function CourtroomPage() {
               {newMessage.length}/2000
             </span>
           </div>
+          <button
+            onClick={handleObjection}
+            disabled={!canSend || !newMessage.trim() || myObjectionsLeft <= 0}
+            className="btn-brutal bg-court-red/20 border-court-red p-2.5 disabled:opacity-30 disabled:cursor-not-allowed shrink-0 relative"
+            title={`Objection! (${myObjectionsLeft} left)`}
+          >
+            <AlertTriangle className="h-5 w-5 text-court-red" />
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-court-red bg-court-card text-[9px] font-black text-court-red">
+              {myObjectionsLeft}
+            </span>
+          </button>
           <button
             onClick={handleSend}
             disabled={!canSend || (!newMessage.trim() && !pendingAttachment)}
