@@ -41,5 +41,13 @@ export const api = {
     request(`/arguments/${caseId}`, { method: 'POST', body: JSON.stringify(data) }),
   getArguments: (caseId) => request(`/arguments/${caseId}`),
 
+  getCourtroom: (caseId) => request(`/courtroom/${caseId}`),
+  pollCourtroom: (caseId, after) =>
+    request(`/courtroom/${caseId}/poll${after ? `?after=${encodeURIComponent(after)}` : ''}`),
+  sendCourtroomMessage: (caseId, data) =>
+    request(`/courtroom/${caseId}/message`, { method: 'POST', body: JSON.stringify(data) }),
+  forceVerdict: (caseId) =>
+    request(`/courtroom/${caseId}/force-verdict`, { method: 'POST' }),
+
   getAuthToken: async () => window.Clerk?.session?.getToken(),
 };

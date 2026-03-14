@@ -9,6 +9,7 @@ import casesRouter from './routes/cases.js';
 import argumentsRouter from './routes/arguments.js';
 import usersRouter from './routes/users.js';
 import uploadRouter from './routes/upload.js';
+import courtroomRouter from './routes/courtroom.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -41,6 +42,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/cases', casesRouter);
 app.use('/api/arguments', argumentsRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/courtroom', courtroomRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

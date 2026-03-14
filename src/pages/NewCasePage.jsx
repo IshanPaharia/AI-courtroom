@@ -85,12 +85,12 @@ export default function NewCasePage() {
           <p className="mb-2 text-sm font-bold uppercase tracking-wide text-court-dark/50">
             Invite Link
           </p>
-          <div className="flex items-center gap-2">
-            <div className="input-brutal flex-1 flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="input-brutal min-w-0 flex-1 flex items-center gap-2 text-sm">
               <LinkIcon className="h-4 w-4 shrink-0 text-court-dark/40" />
               <span className="truncate">{inviteLink}</span>
             </div>
-            <button onClick={copyInviteLink} className="btn-brutal bg-court-gold py-3 px-4">
+            <button onClick={copyInviteLink} className="btn-brutal shrink-0 bg-court-gold py-3 px-4">
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
