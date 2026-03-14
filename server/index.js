@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import express from 'express';
 import cors from 'cors';
@@ -9,8 +11,8 @@ import casesRouter from './routes/cases.js';
 import argumentsRouter from './routes/arguments.js';
 import usersRouter from './routes/users.js';
 import uploadRouter from './routes/upload.js';
-import courtroomRouter from './routes/courtroom.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -42,8 +44,6 @@ app.use('/api/users', usersRouter);
 app.use('/api/cases', casesRouter);
 app.use('/api/arguments', argumentsRouter);
 app.use('/api/upload', uploadRouter);
-app.use('/api/courtroom', courtroomRouter);
-
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -54,6 +54,13 @@ app.use((err, req, res, next) => {
     error: err.message || 'Internal server error',
   });
 });
+
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '..', 'dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  });
+}
 
 const httpServer = createServer(app);
 
@@ -72,11 +79,9 @@ const io = new SocketServer(httpServer, {
 
 setupCourtroomSocket(io);
 
-if (process.env.NODE_ENV !== 'production') {
-  httpServer.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
+httpServer.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 
 export { io };
 export default app;

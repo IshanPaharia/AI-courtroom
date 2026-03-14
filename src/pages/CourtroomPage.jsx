@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useUser } from '@clerk/react';
+import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
@@ -8,16 +9,18 @@ import {
   AlertTriangle,
   Loader2,
   Clock,
+  Shield,
+  User,
   ArrowRight,
+  Wifi,
+  WifiOff,
   Paperclip,
   X as XIcon,
   Image,
-  RefreshCw,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { JUDGE_PERSONAS } from '../lib/mockData';
-
-const POLL_INTERVAL = 3000;
+import { formatDate } from '../lib/utils';
 
 function JudgeTypingIndicator() {
   return (
@@ -41,7 +44,7 @@ function JudgeTypingIndicator() {
 }
 
 function TimeoutBanner({ timeout, side }) {
-  const [remaining, setRemaining] = useState(timeout.remaining);
+  const [remaining, setRemaining] = useState(timeout.duration);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -91,9 +94,6 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
     : msg.sender === 'plaintiff'
     ? plaintiff?.username || 'Plaintiff'
     : defendant?.username || 'Defendant';
-
-  // Hide system-only messages from the chat
-  if (msg.type === 'force_verdict_vote') return null;
 
   const metadata = msg.metadata ? (typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata) : {};
 
@@ -198,25 +198,29 @@ export default function CourtroomPage() {
   const navigate = useNavigate();
   const { user: clerkUser } = useUser();
 
+  const [socket, setSocket] = useState(null);
+  const [connected, setConnected] = useState(false);
   const [caseData, setCaseData] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [yourSide, setYourSide] = useState(null);
   const [newMessage, setNewMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [judgeThinking, setJudgeThinking] = useState(false);
+  const [judgeTyping, setJudgeTyping] = useState(false);
+  const [otherTyping, setOtherTyping] = useState(false);
   const [activeTimeout, setActiveTimeout] = useState(null);
+  const [myTimeoutEnd, setMyTimeoutEnd] = useState(0);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [verdictData, setVerdictData] = useState(null);
+  const [rateLimited, setRateLimited] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [pendingAttachment, setPendingAttachment] = useState(null);
   const [forceVerdictVotes, setForceVerdictVotes] = useState({ plaintiff: false, defendant: false });
   const [myForceVote, setMyForceVote] = useState(false);
-  const [verdictData, setVerdictData] = useState(null);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
-  const lastPollTimeRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -224,92 +228,105 @@ export default function CourtroomPage() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages, judgeThinking, scrollToBottom]);
+  }, [chatMessages, judgeTyping, scrollToBottom]);
 
-  // Initial load
+  // Connect socket
   useEffect(() => {
-    let cancelled = false;
+    let s;
 
-    async function loadCourtroom() {
+    async function connect() {
       try {
-        const data = await api.getCourtroom(caseId);
-        if (cancelled) return;
-
-        setCaseData(data.caseData);
-        setChatMessages(data.messages);
-        setYourSide(data.yourSide);
-        setForceVerdictVotes(data.forceVerdictVotes || { plaintiff: false, defendant: false });
-        setMyForceVote(data.forceVerdictVotes?.[data.yourSide] || false);
-
-        if (data.activeTimeout) {
-          setActiveTimeout(data.activeTimeout);
+        const token = await api.getAuthToken();
+        if (!token) {
+          setError('Not authenticated');
+          return;
         }
 
-        if (data.messages.length > 0) {
-          lastPollTimeRef.current = data.messages[data.messages.length - 1].createdAt;
-        }
+        const serverUrl = import.meta.env.DEV ? 'http://localhost:3001' : undefined;
+        s = io(serverUrl || window.location.origin, {
+          auth: { token },
+          transports: ['websocket', 'polling'],
+        });
 
-        // Check if verdict was already delivered
-        const verdictMsg = data.messages.find((m) => m.type === 'verdict');
-        if (verdictMsg) {
-          const meta = typeof verdictMsg.metadata === 'string' ? JSON.parse(verdictMsg.metadata) : verdictMsg.metadata;
-          setVerdictData(meta);
-        }
+        s.on('connect', () => setConnected(true));
+        s.on('disconnect', () => setConnected(false));
+
+        s.on('case-data', (data) => {
+          setCaseData(data.caseData);
+          setChatMessages(data.messages || []);
+          setYourSide(data.yourSide);
+          s._yourSide = data.yourSide;
+        });
+
+        s.on('new-message', (msg) => {
+          setChatMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+        });
+
+        s.on('judge-typing', (isTyping) => setJudgeTyping(isTyping));
+
+        s.on('user-typing', (data) => {
+          if (data.side !== s._yourSide) setOtherTyping(true);
+        });
+        s.on('user-stop-typing', (data) => {
+          if (data.side !== s._yourSide) setOtherTyping(false);
+        });
+
+        s.on('user-timeout', (data) => {
+          setActiveTimeout(data);
+          if (data.target === s._yourSide) {
+            setMyTimeoutEnd(Date.now() + data.duration * 1000);
+          }
+        });
+
+        s.on('force-verdict-update', (data) => {
+          setForceVerdictVotes(data.votes);
+        });
+
+        s.on('verdict-delivered', (data) => {
+          setVerdictData(data);
+          setCaseData((prev) => prev ? { ...prev, status: 'verdict_delivered' } : prev);
+        });
+
+        s.on('user-presence', (data) => {
+          setOnlineUsers(data.onlineUsers || []);
+        });
+
+        s.on('rate-limited', (data) => {
+          setRateLimited(true);
+          setError(data.message);
+          setTimeout(() => {
+            setRateLimited(false);
+            setError('');
+          }, 3000);
+        });
+
+        s.on('error', (data) => {
+          setError(data.message);
+          setTimeout(() => setError(''), 5000);
+        });
+
+        setSocket(s);
+        s.emit('join-courtroom', caseId);
       } catch (err) {
-        if (!cancelled) setError(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        setError('Failed to connect: ' + err.message);
       }
     }
 
-    loadCourtroom();
-    return () => { cancelled = true; };
+    connect();
+
+    return () => {
+      if (s) s.disconnect();
+    };
   }, [caseId]);
 
-  // Polling for new messages
-  useEffect(() => {
-    if (loading || !caseData || caseData.status === 'verdict_delivered') return;
-
-    const interval = setInterval(async () => {
-      try {
-        const data = await api.pollCourtroom(caseId, lastPollTimeRef.current);
-
-        if (data.messages.length > 0) {
-          setChatMessages((prev) => {
-            const newMsgs = data.messages.filter((m) => !prev.some((p) => p.id === m.id));
-            if (newMsgs.length === 0) return prev;
-            return [...prev, ...newMsgs];
-          });
-          lastPollTimeRef.current = data.messages[data.messages.length - 1].createdAt;
-
-          // Check for verdict in new messages
-          const verdictMsg = data.messages.find((m) => m.type === 'verdict');
-          if (verdictMsg) {
-            const meta = typeof verdictMsg.metadata === 'string' ? JSON.parse(verdictMsg.metadata) : verdictMsg.metadata;
-            setVerdictData(meta);
-          }
-        }
-
-        if (data.caseStatus && data.caseStatus !== caseData.status) {
-          setCaseData((prev) => prev ? { ...prev, status: data.caseStatus } : prev);
-        }
-
-        if (data.forceVerdictVotes) {
-          setForceVerdictVotes(data.forceVerdictVotes);
-        }
-
-        if (data.activeTimeout) {
-          setActiveTimeout(data.activeTimeout);
-        } else {
-          setActiveTimeout(null);
-        }
-      } catch {
-        // Silently handle poll errors
-      }
-    }, POLL_INTERVAL);
-
-    return () => clearInterval(interval);
-  }, [caseId, loading, caseData?.status]);
+  const handleForceVerdict = () => {
+    if (!socket || myForceVote) return;
+    socket.emit('force-verdict-vote');
+    setMyForceVote(true);
+  };
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -349,54 +366,22 @@ export default function CourtroomPage() {
     }
   };
 
-  const handleSend = async () => {
-    if (!newMessage.trim() && !pendingAttachment) return;
-    if (sending) return;
+  const handleSend = () => {
+    if (!socket || (!newMessage.trim() && !pendingAttachment) || rateLimited) return;
+    if (activeTimeout?.target === yourSide) return;
 
-    setSending(true);
-    const thinkingTimer = setTimeout(() => setJudgeThinking(true), 1500);
+    socket.emit('send-message', {
+      content: newMessage.trim() || (pendingAttachment ? `[Evidence: ${pendingAttachment.name}]` : ''),
+      attachmentUrl: pendingAttachment?.url || null,
+      attachmentType: pendingAttachment?.type || null,
+    });
+    setNewMessage('');
+    setPendingAttachment(null);
+    inputRef.current?.focus();
 
-    try {
-      const data = await api.sendCourtroomMessage(caseId, {
-        content: newMessage.trim() || (pendingAttachment ? `[Evidence: ${pendingAttachment.name}]` : ''),
-        attachmentUrl: pendingAttachment?.url || null,
-        attachmentType: pendingAttachment?.type || null,
-      });
-
-      // Add user message
-      setChatMessages((prev) => {
-        if (prev.some((m) => m.id === data.message.id)) return prev;
-        return [...prev, data.message];
-      });
-      lastPollTimeRef.current = data.message.createdAt;
-
-      // Add judge messages if any
-      if (data.judgeMessages?.length > 0) {
-        setChatMessages((prev) => {
-          const newMsgs = data.judgeMessages.filter((m) => !prev.some((p) => p.id === m.id));
-          return [...prev, ...newMsgs];
-        });
-        const lastJudge = data.judgeMessages[data.judgeMessages.length - 1];
-        lastPollTimeRef.current = lastJudge.createdAt;
-
-        const verdictMsg = data.judgeMessages.find((m) => m.type === 'verdict');
-        if (verdictMsg) {
-          const meta = typeof verdictMsg.metadata === 'string' ? JSON.parse(verdictMsg.metadata) : verdictMsg.metadata;
-          setVerdictData(meta);
-          setCaseData((prev) => prev ? { ...prev, status: 'verdict_delivered' } : prev);
-        }
-      }
-
-      setNewMessage('');
-      setPendingAttachment(null);
-    } catch (err) {
-      setError(err.message);
-      setTimeout(() => setError(''), 5000);
-    } finally {
-      clearTimeout(thinkingTimer);
-      setSending(false);
-      setJudgeThinking(false);
-      inputRef.current?.focus();
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      socket.emit('stop-typing');
     }
   };
 
@@ -407,41 +392,33 @@ export default function CourtroomPage() {
     }
   };
 
-  const handleForceVerdict = async () => {
-    if (myForceVote) return;
+  const handleInputChange = (e) => {
+    setNewMessage(e.target.value);
 
-    try {
-      const data = await api.forceVerdict(caseId);
-      setForceVerdictVotes(data.votes);
-      setMyForceVote(true);
-
-      if (data.judgeMessages?.length > 0) {
-        setChatMessages((prev) => {
-          const newMsgs = data.judgeMessages.filter((m) => !prev.some((p) => p.id === m.id));
-          return [...prev, ...newMsgs];
-        });
-        const last = data.judgeMessages[data.judgeMessages.length - 1];
-        lastPollTimeRef.current = last.createdAt;
-
-        const verdictMsg = data.judgeMessages.find((m) => m.type === 'verdict');
-        if (verdictMsg) {
-          const meta = typeof verdictMsg.metadata === 'string' ? JSON.parse(verdictMsg.metadata) : verdictMsg.metadata;
-          setVerdictData(meta);
-          setCaseData((prev) => prev ? { ...prev, status: 'verdict_delivered' } : prev);
-        }
-      }
-    } catch (err) {
-      setError(err.message);
-      setTimeout(() => setError(''), 5000);
+    if (socket) {
+      socket.emit('typing');
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit('stop-typing');
+      }, 2000);
     }
   };
 
   const persona = JUDGE_PERSONAS.find((p) => p.id === caseData?.judgePersona);
-  const isTimedOut = activeTimeout?.target === yourSide && activeTimeout?.remaining > 0;
+  const isTimedOut = myTimeoutEnd > Date.now();
   const isVerdictDelivered = caseData?.status === 'verdict_delivered';
-  const canSend = !isTimedOut && !isVerdictDelivered && !sending && caseData?.status === 'in_session';
+  const canSend = connected && !isTimedOut && !isVerdictDelivered && !rateLimited && caseData?.status === 'in_session';
 
-  if (loading) {
+  // Tick to clear timeout display
+  useEffect(() => {
+    if (!myTimeoutEnd) return;
+    const remaining = myTimeoutEnd - Date.now();
+    if (remaining <= 0) return;
+    const timer = setTimeout(() => setMyTimeoutEnd(0), remaining + 100);
+    return () => clearTimeout(timer);
+  }, [myTimeoutEnd]);
+
+  if (!caseData) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -451,26 +428,6 @@ export default function CourtroomPage() {
       </div>
     );
   }
-
-  if (error && !caseData) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="card-brutal max-w-md text-center">
-          <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-court-red" />
-          <h2 className="text-lg font-black">Failed to enter courtroom</h2>
-          <p className="mt-2 text-sm text-court-dark/60">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="btn-brutal mt-4 bg-court-gold text-sm"
-          >
-            <RefreshCw className="h-4 w-4" /> Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!caseData) return null;
 
   return (
     <div className="mx-auto flex h-[calc(100vh-5rem)] max-w-4xl flex-col">
@@ -490,15 +447,23 @@ export default function CourtroomPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* Online indicators */}
           <div className="flex items-center gap-1.5">
             <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
+              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.plaintiff?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
               <span className="text-[10px] font-bold">{caseData.plaintiff?.username}</span>
             </div>
             <span className="text-xs font-bold text-court-dark/30">vs</span>
             <div className="flex items-center gap-1 rounded-lg border border-court-dark/20 px-2 py-1">
+              <div className={`h-2 w-2 rounded-full ${onlineUsers.includes(caseData.defendant?.id) ? 'bg-court-green' : 'bg-gray-300'}`} />
               <span className="text-[10px] font-bold">{caseData.defendant?.username}</span>
             </div>
           </div>
+          {connected ? (
+            <Wifi className="h-4 w-4 text-court-green" />
+          ) : (
+            <WifiOff className="h-4 w-4 text-court-red" />
+          )}
         </div>
       </div>
 
@@ -515,7 +480,7 @@ export default function CourtroomPage() {
       {/* Chat messages */}
       <div className="flex-1 overflow-y-auto rounded-xl border-2 border-court-dark bg-court-card shadow-brutal">
         <div className="py-3">
-          {chatMessages.length === 0 && !judgeThinking && (
+          {chatMessages.length === 0 && !judgeTyping && (
             <div className="flex flex-col items-center justify-center py-16 text-center text-court-dark/30">
               <Gavel className="h-10 w-10 mb-2" />
               <p className="text-sm font-bold">Waiting for the session to begin...</p>
@@ -534,14 +499,22 @@ export default function CourtroomPage() {
           ))}
 
           <AnimatePresence>
-            {activeTimeout && activeTimeout.remaining > 0 && (
+            {activeTimeout && (
               <TimeoutBanner timeout={activeTimeout} side={yourSide} />
             )}
           </AnimatePresence>
 
           <AnimatePresence>
-            {judgeThinking && <JudgeTypingIndicator />}
+            {judgeTyping && <JudgeTypingIndicator />}
           </AnimatePresence>
+
+          {otherTyping && !judgeTyping && (
+            <div className="px-4 py-1">
+              <span className="text-[10px] font-medium text-court-dark/40 italic">
+                {yourSide === 'plaintiff' ? caseData.defendant?.username : caseData.plaintiff?.username} is typing...
+              </span>
+            </div>
+          )}
 
           <div ref={messagesEndRef} />
         </div>
@@ -644,13 +617,13 @@ export default function CourtroomPage() {
             <input
               ref={inputRef}
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
                 isTimedOut
                   ? 'You are muted by the judge...'
-                  : sending
-                  ? 'Sending...'
+                  : !connected
+                  ? 'Reconnecting...'
                   : caseData?.status !== 'in_session'
                   ? 'Waiting for both parties...'
                   : 'Present your argument...'
@@ -668,7 +641,7 @@ export default function CourtroomPage() {
             disabled={!canSend || (!newMessage.trim() && !pendingAttachment)}
             className="btn-brutal bg-court-gold p-2.5 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
-            {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+            <Send className="h-5 w-5" />
           </button>
         </div>
       )}
