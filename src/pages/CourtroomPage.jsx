@@ -321,6 +321,25 @@ export default function CourtroomPage() {
           setTimeout(() => setError(''), 5000);
         });
 
+        s.on('connect_error', async (err) => {
+          console.warn('Socket connection error, refreshing token:', err.message);
+          try {
+            const token = await api.getAuthToken();
+            if (token) {
+              s.auth.token = token;
+              if (
+                err.message === 'Authentication failed' ||
+                err.message === 'Invalid token' ||
+                err.message === 'No auth token'
+              ) {
+                s.connect();
+              }
+            }
+          } catch (tokenErr) {
+            console.error('Failed to refresh token during reconnect:', tokenErr);
+          }
+        });
+
         setSocket(s);
         s.emit('join-courtroom', caseId);
       } catch (err) {
