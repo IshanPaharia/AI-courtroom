@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { cases, users, messages } from '../db/schema.js';
-import { eq, and, asc, sql } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { getJudgeInterjection } from '../services/judge.js';
 import { verifyToken } from '@clerk/express';
 
@@ -132,6 +132,7 @@ async function triggerJudge(io, caseId) {
 
     if (result.type === 'silent') {
       io.to(caseId).emit('judge-typing', false);
+      room.messagesSinceJudge = 0;
       return;
     }
 
@@ -253,10 +254,7 @@ export function setupCourtroomSocket(io) {
         const userId = socket.dbUser.id;
         const isPlaintiff = caseData.plaintiffId === userId;
         const isDefendant = caseData.defendantId === userId;
-
-        if (!isPlaintiff && !isDefendant) {
-          return socket.emit('error', { message: 'You are not a party in this case' });
-        }
+        const isSpectator = !isPlaintiff && !isDefendant;
 
         // Leave any previously joined room (handles reconnects / StrictMode)
         if (socket.caseId) {
@@ -265,10 +263,12 @@ export function setupCourtroomSocket(io) {
 
         socket.join(caseId);
         socket.caseId = caseId;
-        socket.side = isPlaintiff ? 'plaintiff' : 'defendant';
+        socket.side = isPlaintiff ? 'plaintiff' : isDefendant ? 'defendant' : 'spectator';
 
         const room = getRoom(caseId);
-        room.onlineUsers.add(userId);
+        if (!isSpectator) {
+          room.onlineUsers.add(userId);
+        }
 
         const existingMessages = await loadMessages(caseId);
 
@@ -329,6 +329,7 @@ export function setupCourtroomSocket(io) {
       try {
         const caseId = socket.caseId;
         if (!caseId) return socket.emit('error', { message: 'Not in a courtroom' });
+        if (socket.side === 'spectator') return socket.emit('error', { message: 'Spectators cannot send messages' });
 
         const caseData = await loadCaseWithUsers(caseId);
         if (!caseData || caseData.status !== 'in_session') {
@@ -337,6 +338,13 @@ export function setupCourtroomSocket(io) {
 
         const userId = socket.dbUser.id;
         const room = getRoom(caseId);
+
+        // Enforce presence of both plaintiff and defendant
+        const isPlaintiffOnline = room.onlineUsers.has(caseData.plaintiffId);
+        const isDefendantOnline = caseData.defendantId ? room.onlineUsers.has(caseData.defendantId) : false;
+        if (!isPlaintiffOnline || !isDefendantOnline) {
+          return socket.emit('error', { message: 'Both parties must be online to argue' });
+        }
 
         // Check timeout
         if (isTimedOut(room, userId)) {
@@ -387,6 +395,7 @@ export function setupCourtroomSocket(io) {
       try {
         const caseId = socket.caseId;
         if (!caseId) return socket.emit('error', { message: 'Not in a courtroom' });
+        if (socket.side === 'spectator') return socket.emit('error', { message: 'Spectators cannot send objections' });
 
         const caseData = await loadCaseWithUsers(caseId);
         if (!caseData || caseData.status !== 'in_session') {
@@ -396,6 +405,13 @@ export function setupCourtroomSocket(io) {
         const userId = socket.dbUser.id;
         const room = getRoom(caseId);
         const side = socket.side;
+
+        // Enforce presence of both plaintiff and defendant
+        const isPlaintiffOnline = room.onlineUsers.has(caseData.plaintiffId);
+        const isDefendantOnline = caseData.defendantId ? room.onlineUsers.has(caseData.defendantId) : false;
+        if (!isPlaintiffOnline || !isDefendantOnline) {
+          return socket.emit('error', { message: 'Both parties must be online to send objections' });
+        }
 
         if (isTimedOut(room, userId)) {
           const remaining = Math.ceil((room.timeouts[userId] - Date.now()) / 1000);
@@ -433,7 +449,7 @@ export function setupCourtroomSocket(io) {
     });
 
     socket.on('typing', () => {
-      if (socket.caseId) {
+      if (socket.caseId && socket.side !== 'spectator') {
         socket.to(socket.caseId).emit('user-typing', {
           userId: socket.dbUser.id,
           username: socket.dbUser.username,
@@ -443,7 +459,7 @@ export function setupCourtroomSocket(io) {
     });
 
     socket.on('stop-typing', () => {
-      if (socket.caseId) {
+      if (socket.caseId && socket.side !== 'spectator') {
         socket.to(socket.caseId).emit('user-stop-typing', {
           userId: socket.dbUser.id,
           side: socket.side,
@@ -454,6 +470,7 @@ export function setupCourtroomSocket(io) {
     socket.on('force-verdict-vote', async () => {
       const caseId = socket.caseId;
       if (!caseId) return;
+      if (socket.side === 'spectator') return;
 
       const room = getRoom(caseId);
       const side = socket.side;
@@ -487,7 +504,9 @@ export function setupCourtroomSocket(io) {
     socket.on('disconnect', () => {
       if (socket.caseId) {
         const room = getRoom(socket.caseId);
-        room.onlineUsers.delete(socket.dbUser.id);
+        if (socket.side !== 'spectator') {
+          room.onlineUsers.delete(socket.dbUser.id);
+        }
 
         io.to(socket.caseId).emit('user-presence', {
           userId: socket.dbUser.id,

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { cases, users, arguments_, messages } from '../db/schema.js';
-import { eq, or, desc, sql, and, isNull } from 'drizzle-orm';
+import { eq, or, desc, sql, and } from 'drizzle-orm';
 import { requireAuth, syncUser } from '../middleware/auth.js';
 import { getVerdict } from '../services/judge.js';
 
@@ -190,11 +190,31 @@ router.post('/:id/verdict', requireAuth(), syncUser, async (req, res, next) => {
     if (!caseData) return res.status(404).json({ error: 'Case not found' });
     if (caseData.status === 'verdict_delivered') return res.status(400).json({ error: 'Verdict already delivered' });
 
-    const caseArgs = await db
+    let caseArgs = await db
       .select()
       .from(arguments_)
       .where(eq(arguments_.caseId, caseData.id))
       .orderBy(arguments_.roundNumber, arguments_.createdAt);
+
+    // Fallback to real-time messages if no legacy arguments exist
+    if (caseArgs.length === 0) {
+      const chatMessages = await db
+        .select()
+        .from(messages)
+        .where(and(eq(messages.caseId, caseData.id), or(eq(messages.type, 'message'), eq(messages.type, 'objection'))))
+        .orderBy(messages.createdAt);
+
+      caseArgs = chatMessages.map((m, idx) => ({
+        id: m.id,
+        caseId: m.caseId,
+        userId: m.userId,
+        side: m.sender,
+        roundNumber: Math.floor(idx / 2) + 1,
+        content: m.content,
+        isObjection: m.type === 'objection',
+        createdAt: m.createdAt,
+      }));
+    }
 
     if (caseArgs.length < 2) {
       return res.status(400).json({ error: 'Both sides must present at least one argument' });

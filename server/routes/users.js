@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { users, cases, arguments_ } from '../db/schema.js';
+import { users, cases, arguments_, messages } from '../db/schema.js';
 import { eq, or, and, desc, sql } from 'drizzle-orm';
 import { requireAuth, syncUser } from '../middleware/auth.js';
 
@@ -74,15 +74,31 @@ router.get('/me/stats', requireAuth(), syncUser, async (req, res, next) => {
       })
     );
 
-    const [objectionCount] = await db
+    const [legacyObjectionCount] = await db
       .select({ count: sql`count(*)::int` })
       .from(arguments_)
       .where(sql`${arguments_.userId} = ${userId} AND ${arguments_.isObjection} = true`);
 
-    const [totalArgCount] = await db
+    const [realtimeObjectionCount] = await db
+      .select({ count: sql`count(*)::int` })
+      .from(messages)
+      .where(and(eq(messages.userId, userId), eq(messages.type, 'objection')));
+
+    const [legacyArgCount] = await db
       .select({ count: sql`count(*)::int` })
       .from(arguments_)
       .where(eq(arguments_.userId, userId));
+
+    const [realtimeArgCount] = await db
+      .select({ count: sql`count(*)::int` })
+      .from(messages)
+      .where(and(
+        eq(messages.userId, userId),
+        or(eq(messages.type, 'message'), eq(messages.type, 'objection'))
+      ));
+
+    const objectionCount = (legacyObjectionCount?.count || 0) + (realtimeObjectionCount?.count || 0);
+    const totalArgCount = (legacyArgCount?.count || 0) + (realtimeArgCount?.count || 0);
 
     const totalCases = userCases.length;
     const resolved = userCases.filter((c) => c.status === 'verdict_delivered').length;

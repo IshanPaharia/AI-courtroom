@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useUser } from '@clerk/react';
+import { useParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { JUDGE_PERSONAS } from '../lib/mockData';
-import { formatDate } from '../lib/utils';
 
 function JudgeTypingIndicator() {
   return (
@@ -111,14 +110,14 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
         className="flex justify-center my-2 px-4"
       >
         <div
-          className={`max-w-lg w-full rounded-xl border-2 border-court-dark p-3 shadow-brutal-sm text-center ${
+          className={`max-w-lg w-full rounded-xl border-2 p-3 shadow-brutal-sm text-center ${
             isVerdict
-              ? 'bg-court-gold'
+              ? 'border-court-ink bg-court-gold text-court-ink'
               : isWarning
-              ? 'bg-orange-100'
+              ? 'border-court-dark bg-orange-100 dark:bg-orange-950/40'
               : isTimeout
-              ? 'bg-court-red/10'
-              : 'bg-court-gold-light'
+              ? 'border-court-dark bg-court-red/10'
+              : 'border-court-dark bg-court-gold-light'
           }`}
         >
           <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -134,7 +133,7 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
           </div>
           <p className="text-sm font-medium">{msg.content}</p>
           {isVerdict && (
-            <div className="mt-2 text-xs font-bold text-court-dark/70">
+            <div className="mt-2 text-xs font-bold text-court-ink/70">
               The court has reached a decision.
             </div>
           )}
@@ -165,8 +164,8 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
                 ? 'border-court-dark bg-court-blue/20'
                 : 'border-court-dark bg-court-green/20'
               : msg.sender === 'plaintiff'
-              ? 'border-court-dark bg-blue-50'
-              : 'border-court-dark bg-green-50'
+              ? 'border-court-dark bg-blue-50 dark:bg-blue-950/40'
+              : 'border-court-dark bg-green-50 dark:bg-green-950/40'
           }`}
         >
           {isObjection && (
@@ -205,8 +204,6 @@ function ChatMessage({ msg, yourSide, plaintiff, defendant }) {
 
 export default function CourtroomPage() {
   const { caseId } = useParams();
-  const navigate = useNavigate();
-  const { user: clerkUser } = useUser();
 
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -445,8 +442,15 @@ export default function CourtroomPage() {
   const persona = JUDGE_PERSONAS.find((p) => p.id === caseData?.judgePersona);
   const isTimedOut = myTimeoutEnd > Date.now();
   const isVerdictDelivered = caseData?.status === 'verdict_delivered';
-  const canSend = connected && !isTimedOut && !isVerdictDelivered && !rateLimited && caseData?.status === 'in_session';
-  const myObjectionsLeft = 2 - (objectionCounts[yourSide] || 0);
+  const isSpectator = yourSide === 'spectator';
+
+  // Check if both plaintiff and defendant are currently connected to the socket room
+  const isPlaintiffOnline = onlineUsers.includes(caseData?.plaintiff?.id);
+  const isDefendantOnline = caseData?.defendant ? onlineUsers.includes(caseData?.defendant.id) : false;
+  const bothOnline = isPlaintiffOnline && isDefendantOnline;
+
+  const canSend = connected && !isTimedOut && !isVerdictDelivered && !rateLimited && caseData?.status === 'in_session' && !isSpectator && bothOnline;
+  const myObjectionsLeft = isSpectator ? 0 : 2 - (objectionCounts[yourSide] || 0);
 
   // Tick to clear timeout display
   useEffect(() => {
@@ -498,6 +502,11 @@ export default function CourtroomPage() {
             {caseData.isAppeal && (
               <span className="rounded-lg border border-court-red bg-court-red/10 px-2 py-0.5 text-[10px] font-black text-court-red">
                 APPEAL
+              </span>
+            )}
+            {isSpectator && (
+              <span className="rounded-lg border border-court-blue bg-court-blue/10 px-2 py-0.5 text-[10px] font-black text-court-blue">
+                SPECTATOR MODE
               </span>
             )}
           </div>
@@ -626,17 +635,19 @@ export default function CourtroomPage() {
               ({[forceVerdictVotes.plaintiff && 'Plaintiff', forceVerdictVotes.defendant && 'Defendant'].filter(Boolean).join(', ') || 'No votes'})
             </span>
           </div>
-          <button
-            onClick={handleForceVerdict}
-            disabled={myForceVote}
-            className={`btn-brutal text-xs py-1 px-3 ${
-              myForceVote
-                ? 'bg-court-gold border-court-gold-dark opacity-70 cursor-not-allowed'
-                : 'bg-court-card'
-            }`}
-          >
-            {myForceVote ? 'Voted' : 'Vote'}
-          </button>
+          {!isSpectator && (
+            <button
+              onClick={handleForceVerdict}
+              disabled={myForceVote}
+              className={`btn-brutal text-xs py-1 px-3 ${
+                myForceVote
+                  ? 'bg-court-gold border-court-gold-dark opacity-70 cursor-not-allowed'
+                  : 'bg-court-card'
+              }`}
+            >
+              {myForceVote ? 'Voted' : 'Vote'}
+            </button>
+          )}
         </div>
       )}
 
@@ -676,12 +687,16 @@ export default function CourtroomPage() {
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={
-                isTimedOut
+                isSpectator
+                  ? 'You are viewing this courtroom as a spectator...'
+                  : isTimedOut
                   ? 'You are muted by the judge...'
                   : !connected
                   ? 'Reconnecting...'
                   : caseData?.status !== 'in_session'
                   ? 'Waiting for both parties...'
+                  : !bothOnline
+                  ? 'Waiting for both parties to connect...'
                   : 'Present your argument...'
               }
               disabled={!canSend}

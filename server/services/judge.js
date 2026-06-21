@@ -130,13 +130,13 @@ ${(() => {
   if (forceVerdict) {
     return 'BOTH PARTIES HAVE UNANIMOUSLY REQUESTED AN IMMEDIATE VERDICT. You MUST deliver your verdict NOW based on everything presented so far. Respond with type "verdict" only.';
   }
-  if (plaintiffCount + defendantCount >= 8) {
-    return 'The discussion has gone on long enough. Deliver your verdict NOW.';
+  if (plaintiffCount + defendantCount >= 20) {
+    return 'The discussion has gone on long enough. Deliver your verdict now based on everything presented.';
   }
-  if (plaintiffCount >= 2 && defendantCount >= 2) {
-    return 'Both sides have presented their arguments. You should deliver your verdict now unless critical information is clearly missing.';
+  if (plaintiffCount >= 4 && defendantCount >= 4) {
+    return 'Both sides have presented substantial arguments. You may deliver your verdict now if you have enough information and feel confident, or continue asking questions if you need more details.';
   }
-  return 'Review the conversation and decide your next action.';
+  return 'Both sides are presenting their cases. Review the conversation, ask probing questions or warn/timeout users as necessary, and gather information. Do not rush to a verdict until you have all the facts and feel fully confident.';
 })()}`;
 
   return callWithFallback([
